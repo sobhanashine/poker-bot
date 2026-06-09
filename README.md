@@ -45,6 +45,36 @@ python bot.py
 
 برای اینکه بات همیشه روشن بماند، آن را روی یک هاست اجرا کنید (نه روی کامپیوتر شخصی که خاموش می‌شود).
 
+### گزینه‌ی Vercel (سرورلِس + Redis)
+
+این بات روی Vercel در حالت **webhook** اجرا می‌شود و state بازی در **Upstash Redis** ذخیره می‌شود (چون توابع سرورلس حافظه‌ی ماندگار ندارند).
+
+**۱) دیتابیس Redis بساز**
+- در [upstash.com](https://upstash.com) یک دیتابیس Redis رایگان بساز.
+- از تب **REST API** این دو مقدار را بردار: `UPSTASH_REDIS_REST_URL` و `UPSTASH_REDIS_REST_TOKEN`.
+
+**۲) دیپلوی روی Vercel**
+- این ریپو را در [vercel.com](https://vercel.com) به یک پروژه‌ی جدید وصل کن (Import).
+- در **Settings → Environment Variables** این‌ها را اضافه کن:
+  - `BOT_TOKEN` = توکن از BotFather
+  - `UPSTASH_REDIS_REST_URL`
+  - `UPSTASH_REDIS_REST_TOKEN`
+  - `WEBHOOK_SECRET` = یک رشته‌ی دلخواه و مخفی (اختیاری ولی توصیه‌شده)
+- Deploy کن. آدرس پروژه چیزی شبیه `https://your-project.vercel.app` می‌شود.
+
+**۳) ثبت webhook در تلگرام** (یک‌بار، از روی کامپیوتر خودت)
+```bash
+BOT_TOKEN="توکن_شما" WEBHOOK_SECRET="همان_رشته_مخفی" \
+    python set_webhook.py https://your-project.vercel.app
+```
+یا ساده‌تر، این آدرس را در مرورگر باز کن (اگر WEBHOOK_SECRET نگذاشتی):
+```
+https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://your-project.vercel.app/api/webhook
+```
+تمام — حالا بات لایو است و نیازی به روشن‌بودن کامپیوتر نیست.
+
+> نکته: چون بازی turn-based است معمولاً مشکلی پیش نمی‌آید، اما در حالت سرورلس اگر دو اکشن دقیقاً هم‌زمان برسند، احتمال ضعیفِ race روی state وجود دارد. برای میزهای پرترافیک، هاست always-on (پایین) مطمئن‌تر است.
+
 ### گزینه‌ی Docker
 ```bash
 docker build -t poker-bot .

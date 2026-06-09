@@ -16,6 +16,7 @@ from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     Update,
+    WebAppInfo,
 )
 from telegram.constants import ParseMode
 from telegram.error import Forbidden, TelegramError
@@ -37,6 +38,22 @@ logger = logging.getLogger("pokerbot")
 
 # chat_id -> Game
 TABLES: dict[int, Game] = {}
+
+# Deployed Mini App URL (override with WEBAPP_URL env var if the domain changes).
+WEBAPP_URL = os.environ.get("WEBAPP_URL", "https://poker-bot-mu.vercel.app")
+
+
+def play_button(code: str | None = None) -> InlineKeyboardMarkup:
+    """An inline button that launches the poker Mini App (private chats only)."""
+    url = WEBAPP_URL
+    if code:
+        url = f"{WEBAPP_URL}/?c={code}"
+        label = f"🎴 Open table {code}"
+    else:
+        label = "🎴 Play poker"
+    return InlineKeyboardMarkup(
+        [[InlineKeyboardButton(label, web_app=WebAppInfo(url=url))]]
+    )
 
 ACTION_LABELS = {
     Action.FOLD: "🃏 فولد",
@@ -177,19 +194,42 @@ async def announce(context: ContextTypes.DEFAULT_TYPE, chat_id: int, text: str) 
 # Command handlers
 # ---------------------------------------------------------------------------#
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    chat = update.effective_chat
+    # `/start <code>` deep link (from an invite) — open straight into that table.
+    code = context.args[0].upper() if context.args else None
+
+    if chat.type != "private":
+        await update.message.reply_text(
+            "🎴 پوکر را در چت خصوصی با من باز کنید. روی دکمه زیر بزنید یا به من "
+            "پیام خصوصی بدهید و /play را بزنید.")
+        return
+
+    if code:
+        await update.message.reply_text(
+            f"🎴 برای پیوستن به میز *{code}* روی دکمه زیر بزنید:",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=play_button(code),
+        )
+        return
+
     await update.message.reply_text(
-        "🎴 *بات پوکر تگزاس هولدم*\n\n"
-        "این بات را در یک گروه اضافه کنید و بازی را شروع کنید:\n"
-        "• /newtable — ساخت میز جدید\n"
-        "• /join — نشستن سر میز\n"
-        "• /leave — ترک میز\n"
-        "• /begin — شروع دست (پخش کارت‌ها)\n"
-        "• /table — وضعیت میز\n"
-        "• /cards — ارسال مجدد کارت‌های شما (پیام خصوصی)\n"
-        "• /chips — موجودی ژتون شما\n\n"
-        "⚠️ قبل از بازی حتماً همین‌جا در چت خصوصی /start را بزنید تا "
-        "بتوانم کارت‌هایتان را برایتان بفرستم.",
+        "🎴 *پوکر تگزاس هولدم*\n\n"
+        "روی دکمه زیر بزنید تا بازی باز شود. یک میز بسازید و لینک دعوت را "
+        "برای دوستانتان بفرستید تا با هم بازی کنید.",
         parse_mode=ParseMode.MARKDOWN,
+        reply_markup=play_button(),
+    )
+
+
+async def cmd_play(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    chat = update.effective_chat
+    if chat.type != "private":
+        await update.message.reply_text(
+            "🎴 لطفاً در چت خصوصی با من /play را بزنید تا بازی باز شود.")
+        return
+    await update.message.reply_text(
+        "🎴 روی دکمه بزنید تا میز پوکر باز شود:",
+        reply_markup=play_button(),
     )
 
 
@@ -422,6 +462,7 @@ def main() -> None:
 
     app = Application.builder().token(token).build()
     app.add_handler(CommandHandler("start", cmd_start))
+    app.add_handler(CommandHandler("play", cmd_play))
     app.add_handler(CommandHandler("newtable", cmd_newtable))
     app.add_handler(CommandHandler("join", cmd_join))
     app.add_handler(CommandHandler("leave", cmd_leave))

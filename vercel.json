@@ -1,9 +1,13 @@
 {
   "builds": [
-    { "src": "api/webhook.py", "use": "@vercel/python" }
+    { "src": "api/webhook.py", "use": "@vercel/python" },
+    { "src": "api/play.py", "use": "@vercel/python" },
+    { "src": "public/**", "use": "@vercel/static" }
   ],
   "routes": [
     { "src": "/api/webhook", "dest": "api/webhook.py" },
-    { "src": "/(.*)", "dest": "api/webhook.py" }
+    { "src": "/api/play", "dest": "api/play.py" },
+    { "src": "/", "dest": "/public/index.html" },
+    { "src": "/(.+)", "dest": "/public/$1" }
   ]
 }

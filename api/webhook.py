@@ -37,6 +37,7 @@ def build_app() -> Application:
         .build()
     )
     app.add_handler(CommandHandler("start", botmod.cmd_start))
+    app.add_handler(CommandHandler("play", botmod.cmd_play))
     app.add_handler(CommandHandler("newtable", botmod.cmd_newtable))
     app.add_handler(CommandHandler("join", botmod.cmd_join))
     app.add_handler(CommandHandler("leave", botmod.cmd_leave))

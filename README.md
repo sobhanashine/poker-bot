@@ -41,6 +41,31 @@ python bot.py
    - شرط‌بندی با دکمه‌ها انجام می‌شود
    - بعد از هر دست دوباره `/begin`
 
+## دیپلوی دائمی (۲۴ ساعته لایو)
+
+برای اینکه بات همیشه روشن بماند، آن را روی یک هاست اجرا کنید (نه روی کامپیوتر شخصی که خاموش می‌شود).
+
+### گزینه‌ی Docker
+```bash
+docker build -t poker-bot .
+docker run -d --restart=always -e BOT_TOKEN="توکن_شما" --name poker-bot poker-bot
+```
+
+### Railway / Render / Fly.io و مشابه
+1. این ریپو را به سرویس وصل کنید.
+2. متغیر محیطی `BOT_TOKEN` را در تنظیمات سرویس قرار دهید.
+3. نوع پروسه را **worker** انتخاب کنید (فایل `Procfile` آماده است). این بات سرور وب نیست و پورت باز نمی‌کند.
+
+### یک سرور لینوکسی (VPS)
+```bash
+git clone <repo>
+cd poker-bot
+pip install -r requirements.txt
+BOT_TOKEN="توکن_شما" nohup python bot.py &
+```
+
+> توجه: محیط Claude Code on the web به دلیل network policy به `api.telegram.org` دسترسی ندارد، بنابراین بات از داخل آن لایو نمی‌شود — باید جایی اجرا شود که به تلگرام دسترسی دارد.
+
 ## دستورات
 
 | دستور | توضیح |

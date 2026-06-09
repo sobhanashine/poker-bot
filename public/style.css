@@ -155,3 +155,28 @@ button { font-family: inherit; cursor: pointer; border: none; }
 .logbox ul { margin: 4px 0 10px; padding-left: 18px; color: var(--hint);
   font-size: 13px; max-height: 160px; overflow-y: auto; }
 .logbox li { margin: 2px 0; }
+
+/* ---------- Create options ---------- */
+.opts { display: flex; gap: 8px; margin: 0 0 18px; }
+.opts label { flex: 1; font-size: 12px; color: var(--hint); text-align: left;
+  display: flex; flex-direction: column; gap: 5px; font-weight: 600; }
+.opts select { background: var(--card-bg); color: var(--text);
+  border: 1px solid rgba(255,255,255,.12); border-radius: 10px; padding: 11px 8px;
+  font-size: 15px; font-weight: 700; -webkit-appearance: none; appearance: none;
+  text-align: center; }
+
+/* ---------- Turn clock ---------- */
+.turnclock { text-align: center; color: var(--gold); font-weight: 800;
+  font-size: 15px; margin-bottom: 8px; }
+.turnclock .countdown { font-variant-numeric: tabular-nums; }
+
+/* ---------- Pre-actions ---------- */
+.preact { display: flex; gap: 8px; margin-bottom: 8px; }
+.preact button { flex: 1; background: var(--card-bg); color: var(--text);
+  border: 1px solid rgba(255,255,255,.14); border-radius: 11px; padding: 12px;
+  font-size: 14px; font-weight: 700; }
+.preact button.on { background: var(--gold); color: #1a1300; border-color: var(--gold); }
+
+/* ---------- Rebuy ---------- */
+.rebuy { width: 100%; margin-top: 8px; background: #4a3a12; color: var(--gold);
+  border-radius: 12px; padding: 13px; font-size: 15px; font-weight: 800; }

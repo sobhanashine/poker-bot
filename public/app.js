@@ -45,7 +45,13 @@ function showLobby(msg, ok) {
 
 $("btnCreate").onclick = async () => {
   $("btnCreate").disabled = true;
-  const r = await api("create");
+  const [sb, bb] = $("optBlinds").value.split(",").map(Number);
+  const r = await api("create", {
+    small_blind: sb,
+    big_blind: bb,
+    starting_stack: Number($("optStack").value),
+    turn_seconds: Number($("optTimer").value),
+  });
   $("btnCreate").disabled = false;
   if (r.error) return showLobby(r.error);
   enterTable(r.table);
@@ -138,9 +144,13 @@ function cardEl(code, cls = "") {
 function render(view) {
   if (!view) return;
   state.view = view;
-  const json = JSON.stringify(view);
-  // Keep raise slider stable; skip full re-render if nothing changed.
-  if (json === state.lastJson) return;
+  // Sync our clock to the server so countdowns are accurate.
+  state.clockSkew = Date.now() - view.server_time * 1000;
+  // Diff on everything EXCEPT the per-second server clock, so the table only
+  // re-renders on real changes (keeps the raise slider stable).
+  const { server_time, ...rest } = view;
+  const json = JSON.stringify(rest);
+  if (json === state.lastJson) { tickCountdowns(); return; }
   state.lastJson = json;
 
   $("codeChip").textContent = view.code;
@@ -231,28 +241,60 @@ function renderControls(view) {
     let html = `<div class="host-actions">`;
     html += `<button class="invite" onclick="invite()">📨 Invite</button>`;
     if (view.can_start) {
-      const label = view.stage === "hand_over" ? "Deal next hand" : "Deal hand";
+      const label = view.stage === "hand_over" ? "Deal now" : "Deal hand";
       html += `<button class="deal" onclick="doStart()">🎬 ${label}</button>`;
     }
     html += `</div>`;
-    if (!view.can_start) {
-      const need = view.is_host
+    if (view.can_rebuy) {
+      html += `<button class="rebuy" onclick="doRebuy()">💰 Rebuy to ${view.buy_in}</button>`;
+    }
+    if (view.stage === "hand_over" && view.next_hand_at) {
+      html += `<div class="wait">Next hand in <span class="countdown" data-deadline="${view.next_hand_at}">…</span>s</div>`;
+    } else if (!view.can_start) {
+      html += `<div class="wait">${view.is_host
         ? "Need 2+ players with chips to deal."
-        : "Waiting for the host to deal…";
-      html += `<div class="wait">${need}</div>`;
+        : (view.seated ? "Waiting for the host to deal…" : "Spectating — rebuy to sit in.")}</div>`;
     }
     c.innerHTML = html;
+    tickCountdowns();
     return;
   }
 
-  // In a hand.
+  // In a hand, not my turn — offer pre-actions + show whose turn.
   if (!view.my_turn || !view.actions) {
-    c.innerHTML = `<div class="wait">${view.turn_name
-      ? "Waiting for " + escapeHtml(view.turn_name) + "…" : "…"}</div>`;
+    let html = "";
+    if (view.can_preact) {
+      const m = view.my_preaction;
+      html += `<div class="preact">
+        <button class="${m === "check_fold" ? "on" : ""}" onclick="doPreact('check_fold')">Check / Fold</button>
+        <button class="${m === "call_any" ? "on" : ""}" onclick="doPreact('call_any')">Call Any</button>
+      </div>`;
+    }
+    const clock = view.turn_deadline
+      ? ` <span class="countdown" data-deadline="${view.turn_deadline}">…</span>s` : "";
+    html += `<div class="wait">${view.turn_name
+      ? "Waiting for " + escapeHtml(view.turn_name) + "…" + clock : "…"}</div>`;
+    c.innerHTML = html;
+    tickCountdowns();
     return;
   }
-  c.innerHTML = actionsHtml(view.actions);
+
+  // My turn.
+  const clock = view.turn_deadline
+    ? `<div class="turnclock">⏱ <span class="countdown" data-deadline="${view.turn_deadline}">…</span>s</div>` : "";
+  c.innerHTML = clock + actionsHtml(view.actions);
   wireRaise(view.actions);
+  tickCountdowns();
+}
+
+function tickCountdowns() {
+  const v = state.view;
+  if (!v) return;
+  const serverNow = (Date.now() - (state.clockSkew || 0)) / 1000;
+  document.querySelectorAll(".countdown").forEach((el) => {
+    const dl = parseFloat(el.dataset.deadline);
+    el.textContent = Math.max(0, Math.ceil(dl - serverNow));
+  });
 }
 
 function actionsHtml(a) {
@@ -337,10 +379,27 @@ async function doStart() {
   if (r.error) return flashStage(r.error.slice(0, 40));
   state.lastJson = ""; render(r.table);
 }
+async function doPreact(mode) {
+  const cur = state.view ? state.view.my_preaction : null;
+  const send = cur === mode ? "none" : mode;
+  const r = await api("preaction", { mode: send });
+  if (r.error && !r.table) return flashStage(r.error.slice(0, 40));
+  state.lastJson = ""; render(r.table || state.view);
+}
+async function doRebuy() {
+  const r = await api("rebuy");
+  if (r.error && !r.table) return flashStage(r.error.slice(0, 40));
+  state.lastJson = ""; render(r.table);
+}
 window.invite = invite;
 window.doAct = doAct;
 window.doRaise = doRaise;
 window.doStart = doStart;
+window.doPreact = doPreact;
+window.doRebuy = doRebuy;
+
+// Smooth 1s countdown ticker (independent of the 1.5s state poll).
+setInterval(tickCountdowns, 500);
 
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) =>

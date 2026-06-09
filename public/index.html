@@ -13,6 +13,35 @@
     <section id="lobby" class="screen">
       <div class="brand">🎴 Texas Hold'em</div>
       <p class="sub">Play no-limit hold'em with friends, right inside Telegram.</p>
+
+      <div class="opts">
+        <label>Blinds
+          <select id="optBlinds">
+            <option value="5,10">5 / 10</option>
+            <option value="10,20" selected>10 / 20</option>
+            <option value="25,50">25 / 50</option>
+            <option value="50,100">50 / 100</option>
+            <option value="100,200">100 / 200</option>
+          </select>
+        </label>
+        <label>Stack
+          <select id="optStack">
+            <option value="500">500</option>
+            <option value="1000" selected>1000</option>
+            <option value="2500">2500</option>
+            <option value="5000">5000</option>
+          </select>
+        </label>
+        <label>Timer
+          <select id="optTimer">
+            <option value="15">15s</option>
+            <option value="30" selected>30s</option>
+            <option value="60">60s</option>
+            <option value="120">120s</option>
+          </select>
+        </label>
+      </div>
+
       <button id="btnCreate" class="primary big">Create a table</button>
       <div class="divider"><span>or join one</span></div>
       <div class="join-row">

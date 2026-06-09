@@ -44,9 +44,13 @@ def _handle(data: dict) -> tuple[int, dict]:
 
     try:
         if op == "create":
-            sb = int(data.get("small_blind", 10))
-            bb = int(data.get("big_blind", 20))
-            table = tables.create_table(uid, name, sb, bb)
+            table = tables.create_table(
+                uid, name,
+                small_blind=int(data.get("small_blind", 10)),
+                big_blind=int(data.get("big_blind", 20)),
+                starting_stack=int(data.get("starting_stack", tables.DEFAULT_STACK)),
+                turn_seconds=int(data.get("turn_seconds", tables.DEFAULT_TURN_SECONDS)),
+            )
         elif op == "join":
             if not code:
                 return 400, {"error": "missing code"}
@@ -54,7 +58,7 @@ def _handle(data: dict) -> tuple[int, dict]:
         elif op == "state":
             if not code:
                 return 400, {"error": "missing code"}
-            table = tables._load(code)
+            table = tables.load_and_tick(code)
             if table is None:
                 return 404, {"error": "table not found"}
         elif op == "start":
@@ -62,6 +66,10 @@ def _handle(data: dict) -> tuple[int, dict]:
         elif op == "act":
             table = tables.act(
                 code, uid, data.get("action", ""), int(data.get("amount", 0)))
+        elif op == "preaction":
+            table = tables.set_preaction(code, uid, data.get("mode", "none"))
+        elif op == "rebuy":
+            table = tables.rebuy(code, uid)
         elif op == "leave":
             tables.leave_table(code, uid)
             return 200, {"ok": True, "left": True}

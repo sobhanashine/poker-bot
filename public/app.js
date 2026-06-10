@@ -83,6 +83,10 @@ $("codeChip").onclick = () => {
 /* ---------------- Table session ---------------- */
 function enterTable(view) {
   state.code = view.code;
+  state.prevPot = null;
+  state.prevBoardLen = view.board ? view.board.length : 0;
+  state.prevMyKey = (view.my_cards || []).join("");
+  state.lastJson = "";
   localStorage.setItem("pokerCode", view.code);
   $("lobby").classList.add("hidden");
   $("table").classList.remove("hidden");
@@ -132,13 +136,14 @@ function flashStage(txt) {
   setTimeout(() => { if (state.view) el.textContent = state.view.stage; }, 1200);
 }
 
-function cardEl(code, cls = "") {
-  if (!code) return `<div class="card back ${cls}"></div>`;
+function cardEl(code, cls = "", style = "") {
+  const st = style ? ` style="${style}"` : "";
+  if (!code) return `<div class="card back ${cls}"${st}></div>`;
   const rank = code.slice(0, -1);
   const suit = code.slice(-1);
   const r = rank === "T" ? "10" : rank;
   const red = RED.has(suit) ? "red" : "";
-  return `<div class="card ${red} ${cls}">
+  return `<div class="card ${red} ${cls}"${st}>
     <span class="corner"><b>${r}</b><i>${SUIT[suit]}</i></span>
     <span class="pip">${SUIT[suit]}</span></div>`;
 }
@@ -173,11 +178,32 @@ function render(view) {
   $("stageLabel").textContent = view.stage;
   $("potAmt").textContent = fmt(view.pot);
 
-  // Board
-  const board = $("board");
-  let b = view.board.map((c) => cardEl(c)).join("");
+  // Pulse the pot whenever it grows.
+  const potBox = document.querySelector("#table .pot");
+  if (state.prevPot != null && view.pot !== state.prevPot && view.pot > 0) {
+    potBox.classList.remove("pop");
+    void potBox.offsetWidth; // restart the animation
+    potBox.classList.add("pop");
+  }
+  state.prevPot = view.pot;
+
+  // Board — deal-animate only the newly revealed street, with a stagger.
+  const prevLen = state.prevBoardLen || 0;
+  const newFrom = view.board.length < prevLen ? 0 : prevLen;
+  state.prevBoardLen = view.board.length;
+  let b = view.board.map((c, i) =>
+    i >= newFrom
+      ? cardEl(c, "deal", `animation-delay:${((i - newFrom) * 0.12).toFixed(2)}s`)
+      : cardEl(c)
+  ).join("");
   for (let i = view.board.length; i < 5; i++) b += `<div class="empty-card"></div>`;
-  board.innerHTML = b;
+  $("board").innerHTML = b;
+
+  // Who won this hand (used to glow the winning seats).
+  state.winners = new Set(
+    view.result && (view.stage === "hand_over" || view.stage === "showdown")
+      ? view.result.winners.map((w) => w.name) : []
+  );
 
   // Opponents
   const others = view.players.filter((p) => !p.is_me);
@@ -203,8 +229,11 @@ function seatHtml(p, i, n) {
   const cls = ["seat"];
   if (p.is_turn) cls.push("turn");
   if (p.folded) cls.push("folded");
+  if (state.winners && state.winners.has(p.name)) cls.push("winner");
   let cards = "";
-  if (p.cards) cards = p.cards.map((c) => cardEl(c, "sm")).join("");
+  if (p.cards)
+    cards = p.cards.map((c, j) =>
+      cardEl(c, "sm deal", `animation-delay:${(j * 0.12).toFixed(2)}s`)).join("");
   else if (!p.folded && state.view.stage !== "waiting" && state.view.stage !== "hand_over")
     cards = cardEl(null, "sm") + cardEl(null, "sm");
   let tag = "";
@@ -227,9 +256,16 @@ function renderMe(view) {
   const me = view.players.find((p) => p.is_me);
   const meEl = $("me");
   if (!me) { meEl.innerHTML = ""; return; }
-  meEl.className = "me" + (me.is_turn ? " turn" : "");
+  meEl.className = "me" + (me.is_turn ? " turn" : "")
+    + (state.winners && state.winners.has(me.name) ? " winner" : "");
+  // Fade the hole cards in only when a new hand is dealt to us.
+  const myKey = view.my_cards.join("");
+  const fresh = myKey && myKey !== state.prevMyKey;
+  state.prevMyKey = myKey;
   const hand = view.my_cards.length
-    ? view.my_cards.map((c) => cardEl(c, "big")).join("")
+    ? view.my_cards.map((c, j) =>
+        cardEl(c, "big" + (fresh ? " deal" : ""),
+               fresh ? `animation-delay:${(j * 0.15).toFixed(2)}s` : "")).join("")
     : `<div class="empty-card"></div><div class="empty-card"></div>`;
   let bet = "";
   if (me.round_bet)
@@ -319,7 +355,10 @@ function tickCountdowns() {
   const serverNow = (Date.now() - (state.clockSkew || 0)) / 1000;
   document.querySelectorAll(".countdown").forEach((el) => {
     const dl = parseFloat(el.dataset.deadline);
-    el.textContent = Math.max(0, Math.ceil(dl - serverNow));
+    const left = Math.max(0, Math.ceil(dl - serverNow));
+    el.textContent = left;
+    // Only the action timer goes urgent — not the "next hand" countdown.
+    el.classList.toggle("low", left <= 5 && !!el.closest(".turnclock"));
   });
 }
 

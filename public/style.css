@@ -42,6 +42,17 @@ html, body {
 .hidden { display: none !important; }
 button { font-family: inherit; cursor: pointer; border: none; }
 
+/* screens fade in when they (re)appear */
+.screen { animation: screenIn .25s ease-out; }
+@keyframes screenIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+
 /* ====================================================================
    Lobby
    ==================================================================== */
@@ -51,6 +62,10 @@ button { font-family: inherit; cursor: pointer; border: none; }
 .hero-fan {
   position: relative; height: 120px; margin-bottom: 6px;
   pointer-events: none;
+  animation: heroFloat 5s ease-in-out infinite;
+}
+@keyframes heroFloat {
+  50% { transform: translateY(-6px); }
 }
 .hero-fan .card {
   position: absolute; left: 50%; bottom: 0;
@@ -213,7 +228,13 @@ button { font-family: inherit; cursor: pointer; border: none; }
   box-shadow: 0 0 0 1px var(--gold), 0 0 16px rgba(245, 196, 81, .55);
   animation: pulse 1.4s ease-in-out infinite;
 }
-.seat.folded { opacity: .38; filter: grayscale(.6); }
+.seat.folded { opacity: .38; filter: grayscale(.6); transition: opacity .4s ease, filter .4s ease; }
+
+/* hand winners glow gold while the result is shown */
+.seat.winner .plate, .me.winner .plate {
+  border-color: var(--gold);
+  animation: pulse 1.2s ease-in-out infinite;
+}
 
 @keyframes pulse {
   0%, 100% { box-shadow: 0 0 0 1px var(--gold), 0 0 10px rgba(245, 196, 81, .35); }
@@ -227,6 +248,11 @@ button { font-family: inherit; cursor: pointer; border: none; }
   border: 1px solid rgba(245, 196, 81, .35);
   color: #ffe6a8; font-size: 11px; font-weight: 800;
   border-radius: 999px; padding: 2px 8px;
+  animation: chipPop .25s ease-out backwards;
+}
+@keyframes chipPop {
+  from { opacity: 0; transform: scale(.5); }
+  to   { opacity: 1; transform: scale(1); }
 }
 .chip-dot {
   width: 9px; height: 9px; border-radius: 50%;
@@ -271,6 +297,12 @@ button { font-family: inherit; cursor: pointer; border: none; }
   border: 1px solid rgba(255, 255, 255, .12);
   color: #ffeec2; font-weight: 800; font-size: 13px;
   border-radius: 999px; padding: 4px 12px; margin-bottom: 9px;
+}
+.pot.pop { animation: potPop .45s ease; }
+@keyframes potPop {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.22); }
+  100% { transform: scale(1); }
 }
 .board { display: flex; gap: 5px; justify-content: center; }
 
@@ -320,7 +352,6 @@ button { font-family: inherit; cursor: pointer; border: none; }
   color: #1c2230;
   box-shadow: 0 2px 6px rgba(0, 0, 0, .4), inset 0 0 0 1px rgba(0, 0, 0, .06);
   font-weight: 800; line-height: 1;
-  animation: dealIn .28s ease-out;
 }
 .card.red { color: #d3263a; }
 .card .corner {
@@ -360,13 +391,17 @@ button { font-family: inherit; cursor: pointer; border: none; }
 }
 .me .hand .empty-card { width: 58px; height: 80px; border-radius: 9px; }
 
-@keyframes dealIn {
-  from { opacity: 0; transform: translateY(-8px) scale(.92); }
+/* Deal animation — applied (with a stagger delay) only to cards that are
+   genuinely new, so re-renders don't replay it on the whole board. */
+.card.deal { animation: dealCard .45s cubic-bezier(.2, .7, .3, 1.15) backwards; }
+@keyframes dealCard {
+  from { opacity: 0; transform: translateY(-16px) rotateY(90deg) scale(.9); }
+  55%  { opacity: 1; }
   to   { opacity: 1; transform: none; }
 }
-/* dealIn must not fight the fanned-hand transforms */
-.me .hand .card { animation: dealInFan .28s ease-out; }
-@keyframes dealInFan {
+/* The fanned hand has its own resting transforms, so fade only there. */
+.me .hand .card.deal { animation: dealFan .4s ease-out backwards; }
+@keyframes dealFan {
   from { opacity: 0; }
   to   { opacity: 1; }
 }
@@ -376,6 +411,13 @@ button { font-family: inherit; cursor: pointer; border: none; }
    ==================================================================== */
 
 .controls { min-height: 64px; margin-top: 14px; }
+
+/* action UI rises in when it's your turn */
+.act-row, .raise-panel, .turnclock { animation: riseIn .22s ease-out backwards; }
+@keyframes riseIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: none; }
+}
 
 .act-row { display: flex; gap: 8px; }
 .act-row button {
@@ -433,6 +475,14 @@ button { font-family: inherit; cursor: pointer; border: none; }
   font-size: 15px; margin-bottom: 8px;
 }
 .turnclock .countdown { font-variant-numeric: tabular-nums; }
+/* last seconds: countdown turns urgent and blinks */
+.countdown.low {
+  color: var(--danger); display: inline-block;
+  animation: urgentBlink .6s ease-in-out infinite;
+}
+@keyframes urgentBlink {
+  50% { opacity: .35; transform: scale(1.12); }
+}
 
 .preact { display: flex; gap: 8px; margin-bottom: 8px; }
 .preact button {
@@ -457,11 +507,26 @@ button { font-family: inherit; cursor: pointer; border: none; }
    ==================================================================== */
 
 .result-banner {
+  position: relative; overflow: hidden;
   background: linear-gradient(135deg, #233c2c 0%, #16271d 100%);
   border: 1px solid var(--gold);
   border-radius: 13px; padding: 12px; margin-bottom: 10px; text-align: center;
   font-weight: 700; font-size: 14px;
   box-shadow: 0 0 18px rgba(245, 196, 81, .18);
+  animation: bannerIn .5s cubic-bezier(.2, .8, .3, 1.1);
+}
+@keyframes bannerIn {
+  from { opacity: 0; transform: translateY(-14px) scale(.96); }
+  to   { opacity: 1; transform: none; }
+}
+.result-banner::after {
+  content: ""; position: absolute; top: 0; bottom: 0; left: -80px; width: 60px;
+  background: linear-gradient(105deg, transparent, rgba(255, 255, 255, .16), transparent);
+  animation: shimmer 2.4s ease-in-out infinite;
+}
+@keyframes shimmer {
+  0%        { left: -80px; }
+  55%, 100% { left: 110%; }
 }
 .result-banner .win { color: var(--gold); font-weight: 900; }
 

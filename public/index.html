@@ -11,8 +11,14 @@
   <div id="app">
     <!-- Lobby -->
     <section id="lobby" class="screen">
-      <div class="brand">🎴 Texas Hold'em</div>
-      <p class="sub">Play no-limit hold'em with friends, right inside Telegram.</p>
+      <div class="hero-fan">
+        <div class="card red"><span class="corner"><b>A</b><i>♥</i></span><span class="pip">♥</span></div>
+        <div class="card"><span class="corner"><b>A</b><i>♠</i></span><span class="pip">♠</span></div>
+        <div class="card red"><span class="corner"><b>K</b><i>♦</i></span><span class="pip">♦</span></div>
+        <div class="card"><span class="corner"><b>K</b><i>♣</i></span><span class="pip">♣</span></div>
+      </div>
+      <div class="brand">Hold'em</div>
+      <p class="sub">No-limit Texas Hold'em with friends, right inside Telegram.</p>
 
       <div class="opts">
         <label>Blinds
@@ -42,7 +48,7 @@
         </label>
       </div>
 
-      <button id="btnCreate" class="primary big">Create a table</button>
+      <button id="btnCreate" class="primary">Create a table</button>
       <div class="divider"><span>or join one</span></div>
       <div class="join-row">
         <input id="codeInput" inputmode="latin" autocapitalize="characters"
@@ -57,18 +63,20 @@
       <header class="topbar">
         <button id="btnLeave" class="icon" title="Leave">←</button>
         <button id="codeChip" class="code-chip" title="Tap to copy">CODE</button>
-        <div class="stage" id="stageLabel">—</div>
+        <div class="stage-pill" id="stageLabel">—</div>
       </header>
 
       <div id="resultBanner" class="result-banner hidden"></div>
 
-      <div class="felt">
-        <div class="opponents" id="opponents"></div>
-        <div class="board-area">
-          <div class="pot" id="pot">Pot: 0</div>
-          <div class="board" id="board"></div>
+      <div class="table-zone">
+        <div class="felt">
+          <div id="opponents"></div>
+          <div class="board-area">
+            <div class="pot"><span class="chip-dot"></span><span id="potAmt">0</span></div>
+            <div class="board" id="board"></div>
+          </div>
+          <div class="me" id="me"></div>
         </div>
-        <div class="me" id="me"></div>
       </div>
 
       <div class="controls" id="controls"></div>

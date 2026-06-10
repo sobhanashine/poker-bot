@@ -138,7 +138,23 @@ function cardEl(code, cls = "") {
   const suit = code.slice(-1);
   const r = rank === "T" ? "10" : rank;
   const red = RED.has(suit) ? "red" : "";
-  return `<div class="card ${red} ${cls}"><span class="r">${r}</span><span class="s">${SUIT[suit]}</span></div>`;
+  return `<div class="card ${red} ${cls}">
+    <span class="corner"><b>${r}</b><i>${SUIT[suit]}</i></span>
+    <span class="pip">${SUIT[suit]}</span></div>`;
+}
+
+function fmt(n) { return Number(n).toLocaleString("en-US"); }
+
+/* Spread opponents along the top arc of the oval table. */
+function seatPos(i, n) {
+  let deg;
+  if (n === 1) deg = 90;                       // top center
+  else deg = 196 - i * (212 / (n - 1));        // left rail → over the top → right rail
+  const rad = (deg * Math.PI) / 180;
+  return {
+    x: 50 + 46 * Math.cos(rad),
+    y: 40 - 34 * Math.sin(rad),
+  };
 }
 
 function render(view) {
@@ -155,7 +171,7 @@ function render(view) {
 
   $("codeChip").textContent = view.code;
   $("stageLabel").textContent = view.stage;
-  $("pot").textContent = "Pot: " + view.pot;
+  $("potAmt").textContent = fmt(view.pot);
 
   // Board
   const board = $("board");
@@ -164,9 +180,10 @@ function render(view) {
   board.innerHTML = b;
 
   // Opponents
-  const opp = $("opponents");
-  opp.innerHTML = view.players.filter((p) => !p.is_me).map(seatHtml).join("")
-    || `<div class="wait">Waiting for players…</div>`;
+  const others = view.players.filter((p) => !p.is_me);
+  $("opponents").innerHTML = others.length
+    ? others.map((p, i) => seatHtml(p, i, others.length)).join("")
+    : `<div class="wait-felt">Waiting for players…</div>`;
 
   // Me
   renderMe(view);
@@ -182,7 +199,7 @@ function render(view) {
     .map((l) => `<li>${escapeHtml(l)}</li>`).join("");
 }
 
-function seatHtml(p) {
+function seatHtml(p, i, n) {
   const cls = ["seat"];
   if (p.is_turn) cls.push("turn");
   if (p.folded) cls.push("folded");
@@ -194,12 +211,16 @@ function seatHtml(p) {
   if (p.folded) tag = `<span class="tag fold">folded</span>`;
   else if (p.all_in) tag = `<span class="tag allin">all-in</span>`;
   const dealer = p.is_dealer ? `<span class="badge">D</span>` : "";
-  const bet = p.round_bet ? `bet ${p.round_bet}` : "";
-  return `<div class="${cls.join(" ")}">${dealer}
-    <div class="nm">${escapeHtml(p.name)}</div>
-    <div class="ch">${p.chips} 🪙</div>
+  const bet = p.round_bet
+    ? `<span class="bet-chip"><span class="chip-dot"></span>${fmt(p.round_bet)}</span>` : "";
+  const pos = seatPos(i, n);
+  return `<div class="${cls.join(" ")}" style="left:${pos.x.toFixed(1)}%;top:${pos.y.toFixed(1)}%">
     <div class="mini-cards">${cards}</div>
-    <div class="bet">${bet}</div>${tag}</div>`;
+    <div class="plate">${dealer}
+      <div class="nm">${escapeHtml(p.name)}</div>
+      <div class="ch">${fmt(p.chips)}</div>
+    </div>
+    ${bet}${tag}</div>`;
 }
 
 function renderMe(view) {
@@ -210,14 +231,19 @@ function renderMe(view) {
   const hand = view.my_cards.length
     ? view.my_cards.map((c) => cardEl(c, "big")).join("")
     : `<div class="empty-card"></div><div class="empty-card"></div>`;
-  const bet = me.round_bet ? `in pot: ${me.round_bet}` : (me.all_in ? "all-in" : "");
+  let bet = "";
+  if (me.round_bet)
+    bet = `<span class="bet-chip"><span class="chip-dot"></span>${fmt(me.round_bet)}</span>`;
+  else if (me.all_in)
+    bet = `<span class="tag allin">all-in</span>`;
+  const dealer = me.is_dealer ? `<span class="badge">D</span>` : "";
   meEl.innerHTML = `
-    <div class="info">
-      <div class="nm">${escapeHtml(me.name)} ${me.is_dealer ? "🔘" : ""}</div>
-      <div class="ch">${me.chips} 🪙</div>
-      <div class="bet">${bet}</div>
+    <div class="hand">${hand}</div>
+    <div class="plate">${dealer}
+      <span class="nm">${escapeHtml(me.name)}</span> ·
+      <span class="ch">${fmt(me.chips)}</span>
     </div>
-    <div class="hand">${hand}</div>`;
+    <div>${bet}</div>`;
 }
 
 function renderResult(view) {
@@ -321,18 +347,18 @@ function actionsHtml(a) {
   let row = `<div class="act-row">`;
   row += `<button class="b-fold" onclick="doAct('fold')">Fold</button>`;
   if (a.can_check) row += `<button class="b-check" onclick="doAct('check')">Check</button>`;
-  if (a.can_call) row += `<button class="b-call" onclick="doAct('call')">Call ${a.call_amount}</button>`;
+  if (a.can_call) row += `<button class="b-call" onclick="doAct('call')">Call ${fmt(a.call_amount)}</button>`;
   if (a.raise_min != null && a.raise_max > a.raise_min) {
     const verb = a.raise_verb === "bet" ? "Bet" : "Raise";
     row += `<button class="b-raise" onclick="doRaise()">${verb} to <span id="raiseBtnAmt">${state.raiseVal}</span></button>`;
   } else if (a.can_all_in) {
-    row += `<button class="b-allin" onclick="doAct('all_in')">All-in ${a.all_in_amount}</button>`;
+    row += `<button class="b-allin" onclick="doAct('all_in')">All-in ${fmt(a.all_in_amount)}</button>`;
   }
   row += `</div>`;
   // Always offer all-in as a secondary if raise row is shown.
   if (a.raise_min != null && a.raise_max > a.raise_min && a.can_all_in) {
     row += `<div class="act-row" style="margin-top:8px">
-      <button class="b-allin" onclick="doAct('all_in')">All-in ${a.all_in_amount}</button></div>`;
+      <button class="b-allin" onclick="doAct('all_in')">All-in ${fmt(a.all_in_amount)}</button></div>`;
   }
   return raise + row;
 }

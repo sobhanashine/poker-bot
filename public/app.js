@@ -86,6 +86,8 @@ function enterTable(view) {
   state.prevPot = null;
   state.prevBoardLen = view.board ? view.board.length : 0;
   state.prevMyKey = (view.my_cards || []).join("");
+  // Don't replay a finished hand's celebration when (re)joining.
+  state.lastCelebrated = view.result ? JSON.stringify(view.result.winners) : null;
   state.lastJson = "";
   localStorage.setItem("pokerCode", view.code);
   $("lobby").classList.add("hidden");
@@ -150,6 +152,159 @@ function cardEl(code, cls = "", style = "") {
 
 function fmt(n) { return Number(n).toLocaleString("en-US"); }
 
+/* ---------------- Jetons + flight animations ---------------- */
+
+const REDUCED_MOTION =
+  window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+const JETON_DENOMS = [
+  [1000, "j-go"], [500, "j-k"], [100, "j-g"], [25, "j-b"], [5, "j-r"], [1, "j-w"],
+];
+
+function jetonClass(amount) {
+  for (const [v, c] of JETON_DENOMS) if (amount >= v) return c;
+  return "j-w";
+}
+
+/* Greedy chip breakdown of an amount, capped for readability. */
+function jetonChips(amount, max) {
+  const chips = [];
+  let rem = Math.max(1, amount | 0);
+  for (const [v, c] of JETON_DENOMS) {
+    while (rem >= v && chips.length < max) { chips.push(c); rem -= v; }
+    if (chips.length >= max) break;
+  }
+  if (!chips.length) chips.push("j-w");
+  return chips;
+}
+
+function jstackHtml(amount, max = 4) {
+  return jetonChips(amount, max)
+    .map((c, i) => `<i class="jeton ${c}" style="bottom:${i * 3}px"></i>`)
+    .join("");
+}
+
+function feltEl() { return document.querySelector("#table .felt"); }
+
+function feltPoint(el) {
+  const fr = feltEl().getBoundingClientRect();
+  const r = el.getBoundingClientRect();
+  return { x: r.left + r.width / 2 - fr.left, y: r.top + r.height / 2 - fr.top };
+}
+
+function potCenter() {
+  const pot = document.querySelector("#table .pot");
+  return pot ? feltPoint(pot) : { x: 0, y: 0 };
+}
+
+/* Fly one jeton across the felt along a slight arc, then remove it. */
+function flyJeton(from, to, cls, delay, dur) {
+  if (REDUCED_MOTION || !feltEl() || !from || !to) return;
+  const el = document.createElement("i");
+  el.className = "jeton fly " + cls;
+  el.style.left = from.x + "px";
+  el.style.top = from.y + "px";
+  feltEl().appendChild(el);
+  const dx = to.x - from.x, dy = to.y - from.y;
+  const midX = dx * 0.5 + (Math.random() * 44 - 22);
+  const midY = dy * 0.5 - 26 - Math.random() * 18;
+  el.animate([
+    { transform: "translate(-50%,-50%) scale(.9)", opacity: 0.9 },
+    { transform: `translate(calc(-50% + ${midX}px), calc(-50% + ${midY}px)) scale(1.2)`,
+      opacity: 1, offset: 0.55 },
+    { transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) scale(.85)`,
+      opacity: 0.9 },
+  ], { duration: dur, delay, easing: "cubic-bezier(.3,.6,.4,1)", fill: "both" })
+    .onfinish = () => el.remove();
+}
+
+/* Bet-chip positions currently on screen (read BEFORE the re-render). */
+function betSpots() {
+  if (!feltEl()) return [];
+  return [...document.querySelectorAll("#opponents .bet-chip, #me .bet-chip")]
+    .map((el) => ({
+      pos: feltPoint(el),
+      amt: parseInt(el.dataset.amt || "0", 10) || 1,
+    }));
+}
+
+/* Street ended: everyone's bets slide into the pot. */
+function flyBetsToPot(spots) {
+  if (REDUCED_MOTION || !spots || !spots.length) return 0;
+  const to = potCenter();
+  spots.forEach((s, i) => {
+    const n = Math.min(3, 1 + Math.floor(s.amt / Math.max(1, (state.view.big_blind || 10) * 5)));
+    for (let k = 0; k < n; k++)
+      flyJeton(s.pos, to, jetonClass(s.amt), i * 70 + k * 90, 520);
+  });
+  return 650;
+}
+
+/* ---------------- Pot-win celebration ---------------- */
+
+function confettiBurst(delay, count) {
+  if (REDUCED_MOTION || !feltEl()) return;
+  const felt = feltEl();
+  const fr = felt.getBoundingClientRect();
+  const colors = ["#f5c451", "#e8e4da", "#c8403c", "#279e62", "#2f6fd0"];
+  for (let i = 0; i < count; i++) {
+    const b = document.createElement("i");
+    b.className = "confetti-bit";
+    b.style.background = colors[i % colors.length];
+    b.style.left = (8 + Math.random() * 84) + "%";
+    b.style.top = "-12px";
+    felt.appendChild(b);
+    b.animate([
+      { transform: "translateY(0) rotate(0deg)", opacity: 1 },
+      { transform: `translateY(${fr.height * 0.92}px) translateX(${Math.random() * 70 - 35}px)
+                    rotate(${320 + Math.random() * 420}deg)`, opacity: 0 },
+    ], {
+      duration: 1400 + Math.random() * 900,
+      delay: delay + Math.random() * 450,
+      easing: "cubic-bezier(.3,.4,.6,1)",
+      fill: "both",
+    }).onfinish = () => b.remove();
+  }
+}
+
+function celebrateWin(view, baseDelay) {
+  const winners = new Map(view.result.winners.map((w) => [w.name, w.amount]));
+  const meWon = view.players.some((p) => p.is_me && winners.has(p.name));
+  const from = potCenter();
+  const felt = feltEl();
+
+  document.querySelectorAll("#table [data-name]").forEach((el) => {
+    const name = el.dataset.name;
+    if (!winners.has(name)) return;
+    const to = feltPoint(el.querySelector(".plate") || el);
+
+    // shower of jetons from the pot to the winner
+    if (!REDUCED_MOTION) {
+      for (let k = 0; k < 12; k++) {
+        const jitter = { x: to.x + (Math.random() * 40 - 20), y: to.y + (Math.random() * 18 - 9) };
+        const cls = JETON_DENOMS[Math.floor(Math.random() * JETON_DENOMS.length)][1];
+        flyJeton(from, jitter, cls, baseDelay + k * 55, 720);
+      }
+    }
+
+    // floating "+amount"
+    if (felt) {
+      const f = document.createElement("div");
+      f.className = "win-float";
+      f.textContent = "+" + fmt(winners.get(name));
+      f.style.left = to.x + "px";
+      f.style.top = (to.y - 26) + "px";
+      f.style.animationDelay = (baseDelay + 350) + "ms";
+      felt.appendChild(f);
+      setTimeout(() => f.remove(), baseDelay + 2400);
+    }
+  });
+
+  confettiBurst(baseDelay + 250, meWon ? 42 : 22);
+  if (meWon && tg && tg.HapticFeedback)
+    setTimeout(() => tg.HapticFeedback.notificationOccurred("success"), baseDelay + 300);
+}
+
 /* Spread opponents along the top arc of the oval table. */
 function seatPos(i, n) {
   let deg;
@@ -164,6 +319,7 @@ function seatPos(i, n) {
 
 function render(view) {
   if (!view) return;
+  const prevView = state.view;
   state.view = view;
   // Sync our clock to the server so countdowns are accurate.
   state.clockSkew = Date.now() - view.server_time * 1000;
@@ -174,9 +330,19 @@ function render(view) {
   if (json === state.lastJson) { tickCountdowns(); return; }
   state.lastJson = json;
 
+  // Street over? Grab where the bet chips sit NOW, before the re-render
+  // wipes them, so we can fly them into the pot afterwards.
+  const streetCollected =
+    prevView && prevView.code === view.code &&
+    prevView.players.some((p) => p.round_bet > 0) &&
+    view.players.every((p) => !p.round_bet) &&
+    view.pot > 0 && view.stage !== "waiting";
+  const oldBetSpots = streetCollected ? betSpots() : null;
+
   $("codeChip").textContent = view.code;
   $("stageLabel").textContent = view.stage;
   $("potAmt").textContent = fmt(view.pot);
+  $("potJetons").innerHTML = jstackHtml(view.pot, 4);
 
   // Pulse the pot whenever it grows.
   const potBox = document.querySelector("#table .pot");
@@ -223,6 +389,17 @@ function render(view) {
   // Log
   $("log").innerHTML = (view.log || []).slice().reverse()
     .map((l) => `<li>${escapeHtml(l)}</li>`).join("");
+
+  // Flight animations (need the freshly rendered DOM for positions).
+  let delay = 0;
+  if (oldBetSpots) delay = flyBetsToPot(oldBetSpots);
+  const resultKey = view.result && (view.stage === "hand_over" || view.stage === "showdown")
+    ? JSON.stringify(view.result.winners) : null;
+  if (!view.result) state.lastCelebrated = null;
+  if (resultKey && resultKey !== state.lastCelebrated) {
+    state.lastCelebrated = resultKey;
+    celebrateWin(view, delay);
+  }
 }
 
 function seatHtml(p, i, n) {
@@ -241,9 +418,9 @@ function seatHtml(p, i, n) {
   else if (p.all_in) tag = `<span class="tag allin">all-in</span>`;
   const dealer = p.is_dealer ? `<span class="badge">D</span>` : "";
   const bet = p.round_bet
-    ? `<span class="bet-chip"><span class="chip-dot"></span>${fmt(p.round_bet)}</span>` : "";
+    ? `<span class="bet-chip" data-amt="${p.round_bet}"><span class="jstack">${jstackHtml(p.round_bet, 3)}</span>${fmt(p.round_bet)}</span>` : "";
   const pos = seatPos(i, n);
-  return `<div class="${cls.join(" ")}" style="left:${pos.x.toFixed(1)}%;top:${pos.y.toFixed(1)}%">
+  return `<div class="${cls.join(" ")}" data-name="${escapeHtml(p.name)}" style="left:${pos.x.toFixed(1)}%;top:${pos.y.toFixed(1)}%">
     <div class="mini-cards">${cards}</div>
     <div class="plate">${dealer}
       <div class="nm">${escapeHtml(p.name)}</div>
@@ -267,9 +444,10 @@ function renderMe(view) {
         cardEl(c, "big" + (fresh ? " deal" : ""),
                fresh ? `animation-delay:${(j * 0.15).toFixed(2)}s` : "")).join("")
     : `<div class="empty-card"></div><div class="empty-card"></div>`;
+  meEl.dataset.name = me.name;
   let bet = "";
   if (me.round_bet)
-    bet = `<span class="bet-chip"><span class="chip-dot"></span>${fmt(me.round_bet)}</span>`;
+    bet = `<span class="bet-chip" data-amt="${me.round_bet}"><span class="jstack">${jstackHtml(me.round_bet, 3)}</span>${fmt(me.round_bet)}</span>`;
   else if (me.all_in)
     bet = `<span class="tag allin">all-in</span>`;
   const dealer = me.is_dealer ? `<span class="badge">D</span>` : "";
@@ -286,9 +464,9 @@ function renderResult(view) {
   const banner = $("resultBanner");
   if (view.result && (view.stage === "hand_over" || view.stage === "showdown")) {
     const wins = view.result.winners
-      .map((w) => `<span class="win">${escapeHtml(w.name)}</span> +${w.amount} (${escapeHtml(w.desc)})`)
+      .map((w) => `<span class="win">${escapeHtml(w.name)}</span> +${fmt(w.amount)} (${escapeHtml(w.desc)})`)
       .join("<br>");
-    banner.innerHTML = `🏆 ${wins}`;
+    banner.innerHTML = `<span class="trophy">🏆</span> ${wins}`;
     banner.classList.remove("hidden");
   } else {
     banner.classList.add("hidden");

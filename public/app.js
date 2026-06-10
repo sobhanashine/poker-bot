@@ -145,12 +145,28 @@ function cardEl(code, cls = "", style = "") {
   const suit = code.slice(-1);
   const r = rank === "T" ? "10" : rank;
   const red = RED.has(suit) ? "red" : "";
+  const idx = `<b>${r}</b><i>${SUIT[suit]}</i>`;
   return `<div class="card ${red} ${cls}"${st}>
-    <span class="corner"><b>${r}</b><i>${SUIT[suit]}</i></span>
-    <span class="pip">${SUIT[suit]}</span></div>`;
+    <span class="corner">${idx}</span>
+    <span class="pip">${SUIT[suit]}</span>
+    <span class="corner br">${idx}</span></div>`;
 }
 
 function fmt(n) { return Number(n).toLocaleString("en-US"); }
+
+/* Compact chip-count: 950 → 950, 1,250 → 1,250, 12,500 → 12.5K, 2M → 2M. */
+function fmtChips(n) {
+  n = Number(n) || 0;
+  const short = (x) => (Math.round(x * 10) / 10).toFixed(1).replace(/\.0$/, "");
+  if (n >= 1e6) return short(n / 1e6) + "M";
+  if (n >= 1e4) return short(n / 1e3) + "K";
+  return fmt(n);
+}
+
+/* Jeton icon + amount, used for every player's chip total. */
+function chipsHtml(n) {
+  return `<i class="jeton ${jetonClass(n)}"></i>${fmtChips(n)}`;
+}
 
 /* ---------------- Jetons + flight animations ---------------- */
 
@@ -424,7 +440,7 @@ function seatHtml(p, i, n) {
     <div class="mini-cards">${cards}</div>
     <div class="plate">${dealer}
       <div class="nm">${escapeHtml(p.name)}</div>
-      <div class="ch">${fmt(p.chips)}</div>
+      <div class="ch">${chipsHtml(p.chips)}</div>
     </div>
     ${bet}${tag}</div>`;
 }
@@ -454,8 +470,8 @@ function renderMe(view) {
   meEl.innerHTML = `
     <div class="hand">${hand}</div>
     <div class="plate">${dealer}
-      <span class="nm">${escapeHtml(me.name)}</span> ·
-      <span class="ch">${fmt(me.chips)}</span>
+      <span class="nm">${escapeHtml(me.name)}</span>
+      <span class="ch">${chipsHtml(me.chips)}</span>
     </div>
     <div>${bet}</div>`;
 }

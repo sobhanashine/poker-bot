@@ -274,7 +274,19 @@ button { font-family: inherit; cursor: pointer; border: none; }
   font-size: 11px; font-weight: 700; white-space: nowrap;
   overflow: hidden; text-overflow: ellipsis;
 }
-.seat .ch { font-size: 11px; font-weight: 800; color: var(--gold); }
+.seat .ch, .me .ch {
+  display: inline-flex; align-items: center; gap: 4px;
+  margin-top: 3px;
+  background: rgba(0, 0, 0, .38);
+  border: 1px solid rgba(245, 196, 81, .28);
+  border-radius: 999px; padding: 2px 8px;
+  font-size: 11px; font-weight: 800; color: var(--gold);
+  font-variant-numeric: tabular-nums;
+}
+.seat .ch .jeton, .me .ch .jeton {
+  width: 10px; height: 10px; border-width: 1.5px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .5);
+}
 .seat.turn .plate {
   border-color: var(--gold);
   box-shadow: 0 0 0 1px var(--gold), 0 0 16px rgba(245, 196, 81, .55);
@@ -384,7 +396,8 @@ button { font-family: inherit; cursor: pointer; border: none; }
   animation: pulse 1.4s ease-in-out infinite;
 }
 .me .nm { font-weight: 800; font-size: 13px; }
-.me .ch { color: var(--gold); font-weight: 900; font-size: 13px; }
+.me .ch { font-size: 12px; padding: 2px 9px; vertical-align: middle; }
+.me .ch .jeton { width: 11px; height: 11px; }
 
 /* ====================================================================
    Cards
@@ -399,36 +412,52 @@ button { font-family: inherit; cursor: pointer; border: none; }
   font-weight: 800; line-height: 1;
 }
 .card.red { color: #d40000; }
+
+/* corner indices — mirrored bottom-right like a real deck */
 .card .corner {
   position: absolute; top: 4px; left: 5px;
   display: flex; flex-direction: column; align-items: center;
 }
-.card .corner b { font-size: 15px; font-weight: 900; }
-.card .corner i { font-style: normal; font-size: 11px; margin-top: 1px; }
+.card .corner.br {
+  top: auto; left: auto; right: 5px; bottom: 4px;
+  transform: rotate(180deg);
+}
+.card .corner b { font-size: 14px; font-weight: 900; letter-spacing: -.5px; }
+.card .corner i { font-style: normal; font-size: 10px; margin-top: 1px; }
+
+/* large center suit pip */
 .card .pip {
-  position: absolute; right: 4px; bottom: 2px;
+  position: absolute; left: 50%; top: 52%;
+  transform: translate(-50%, -50%);
   font-size: 22px;
 }
 
-.card.back {
+/* card back: white stock edge, deep-red lattice, thin gold frame */
+.card.back { background: linear-gradient(160deg, #f6f3ec 0%, #e6e1d6 100%); }
+.card.back::before {
+  content: ""; position: absolute; inset: 3px; border-radius: 4px;
   background:
-    radial-gradient(circle at 50% 50%, rgba(255, 255, 255, .14) 0 1px, transparent 1.5px) 0 0 / 7px 7px,
-    linear-gradient(160deg, #27407a 0%, #16264c 100%);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, .4), inset 0 0 0 2px rgba(255, 255, 255, .18);
+    repeating-linear-gradient(45deg,  rgba(255, 255, 255, .14) 0 1.5px, transparent 1.5px 5.5px),
+    repeating-linear-gradient(-45deg, rgba(255, 255, 255, .14) 0 1.5px, transparent 1.5px 5.5px),
+    linear-gradient(160deg, #93212f 0%, #5c1320 100%);
+  box-shadow: inset 0 0 0 1px rgba(245, 196, 81, .5);
 }
 .card.back .corner, .card.back .pip { display: none; }
 
 .card.sm { width: 24px; height: 34px; border-radius: 4px; }
 .card.sm .corner { top: 2px; left: 2px; }
+.card.sm .corner.br { display: none; }   /* too small for the mirror index */
 .card.sm .corner b { font-size: 10px; }
 .card.sm .corner i { font-size: 8px; }
-.card.sm .pip { font-size: 11px; right: 2px; bottom: 1px; }
+.card.sm .pip { font-size: 12px; top: 60%; }
+.card.sm.back::before { inset: 2px; border-radius: 2.5px; }
 
 .card.big { width: 58px; height: 80px; border-radius: 9px; }
 .card.big .corner { top: 6px; left: 7px; }
-.card.big .corner b { font-size: 20px; }
-.card.big .corner i { font-size: 14px; }
-.card.big .pip { font-size: 30px; right: 5px; bottom: 3px; }
+.card.big .corner.br { top: auto; left: auto; right: 7px; bottom: 6px; }
+.card.big .corner b { font-size: 19px; }
+.card.big .corner i { font-size: 13px; }
+.card.big .pip { font-size: 30px; }
 
 .empty-card {
   width: 44px; height: 62px; border-radius: 7px;

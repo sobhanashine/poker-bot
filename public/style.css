@@ -393,12 +393,12 @@ button { font-family: inherit; cursor: pointer; border: none; }
 .card {
   position: relative;
   width: 44px; height: 62px; border-radius: 7px;
-  background: linear-gradient(160deg, #ffffff 0%, #e9edf2 100%);
-  color: #1c2230;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, .4), inset 0 0 0 1px rgba(0, 0, 0, .06);
+  background: #ffffff;
+  color: #0a0a0a;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, .4), inset 0 0 0 1px rgba(0, 0, 0, .08);
   font-weight: 800; line-height: 1;
 }
-.card.red { color: #d3263a; }
+.card.red { color: #d40000; }
 .card .corner {
   position: absolute; top: 4px; left: 5px;
   display: flex; flex-direction: column; align-items: center;
@@ -407,7 +407,7 @@ button { font-family: inherit; cursor: pointer; border: none; }
 .card .corner i { font-style: normal; font-size: 11px; margin-top: 1px; }
 .card .pip {
   position: absolute; right: 4px; bottom: 2px;
-  font-size: 22px; opacity: .9;
+  font-size: 22px;
 }
 
 .card.back {

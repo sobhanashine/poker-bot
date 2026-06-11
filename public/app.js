@@ -3,7 +3,13 @@
 
 const BOT_USERNAME = "Poker_mars_bot";
 const tg = window.Telegram ? window.Telegram.WebApp : null;
-if (tg) { tg.ready(); tg.expand(); }
+if (tg) {
+  tg.ready();
+  tg.expand();
+  // Stop swipe-to-collapse hijacking scroll gestures inside the app
+  // (this is what made the join-code area jump around).
+  if (tg.disableVerticalSwipes) tg.disableVerticalSwipes();
+}
 
 const SUIT = { s: "♠", h: "♥", d: "♦", c: "♣" };
 const RED = new Set(["h", "d"]);
@@ -66,9 +72,40 @@ function renderProfile(p) {
   const winRate = p.hands_played
     ? Math.round((p.hands_won / p.hands_played) * 100) : 0;
   $("profStats").textContent = p.hands_played
-    ? `${p.hands_played} hands · ${p.hands_won} won (${winRate}%)`
-    : "No hands played yet";
+    ? `${p.hands_played} hands · ${p.hands_won} won (${winRate}%) · tap for more`
+    : "No hands played yet · tap for details";
 }
+
+/* ---- Full profile modal ---- */
+function openProfileModal(p) {
+  if (!p) return;
+  $("pmAvatar").textContent = (p.name || "?").trim().charAt(0).toUpperCase();
+  $("pmName").textContent = p.name || "—";
+  $("pmSince").textContent = p.created_at
+    ? "Playing since " + new Date(p.created_at * 1000).toLocaleDateString(
+        "en-US", { month: "short", year: "numeric" })
+    : "";
+  $("pmBankroll").textContent = fmtChips(p.chips);
+  $("pmInPlay").textContent = fmtChips(p.in_play || 0);
+  $("pmHands").textContent = fmt(p.hands_played);
+  $("pmWins").textContent = fmt(p.hands_won);
+  $("pmWinRate").textContent = (p.hands_played
+    ? Math.round((p.hands_won / p.hands_played) * 100) : 0) + "%";
+  $("pmBiggest").textContent = fmtChips(p.biggest_pot);
+  $("pmTotalWon").textContent = fmtChips(p.total_won || 0);
+  $("pmTable").textContent = p.active_code || "—";
+  $("profileModal").classList.remove("hidden");
+}
+
+$("profileCard").onclick = async () => {
+  openProfileModal(state.profile);       // show what we have immediately
+  const r = await api("profile");        // then refresh with live numbers
+  if (r.profile) { state.profile = r.profile; openProfileModal(r.profile); }
+};
+$("profileClose").onclick = () => $("profileModal").classList.add("hidden");
+$("profileModal").onclick = (e) => {
+  if (e.target === $("profileModal")) $("profileModal").classList.add("hidden");
+};
 
 function setBankroll(chips) {
   if (chips == null) return;
@@ -148,6 +185,13 @@ async function joinNearby(code) {
   enterTable(r.table);
 }
 
+/* Mixed mode shows its cadence picker + explainer. */
+$("optMode").onchange = () => {
+  const mixed = $("optMode").value === "mixed";
+  $("omahaEveryWrap").classList.toggle("hidden", !mixed);
+  $("modeHint").classList.toggle("hidden", !mixed);
+};
+
 $("btnCreate").onclick = async () => {
   $("btnCreate").disabled = true;
   const [sb, bb] = $("optBlinds").value.split(",").map(Number);
@@ -156,6 +200,8 @@ $("btnCreate").onclick = async () => {
     big_blind: bb,
     starting_stack: Number($("optStack").value),
     turn_seconds: Number($("optTimer").value),
+    mode: $("optMode").value,
+    omaha_every: Number($("optOmahaEvery").value),
   };
   if ($("optNearby").checked) {
     try {
@@ -182,6 +228,14 @@ $("btnJoin").onclick = async () => {
   setBankroll(r.bankroll);
   enterTable(r.table);
 };
+
+// When the keyboard opens over the code field, keep the field and its Join
+// button in view instead of letting the page jump-scroll behind it.
+$("codeInput").addEventListener("focus", () => {
+  setTimeout(() => {
+    $("codeInput").scrollIntoView({ block: "center", behavior: "smooth" });
+  }, 300);
+});
 
 $("btnLeave").onclick = async () => {
   if (tg) tg.HapticFeedback && tg.HapticFeedback.impactOccurred("light");
@@ -250,11 +304,16 @@ function invite() {
 }
 
 /* ---------------- Rendering ---------------- */
+function stageText(view) {
+  const inHand = view.stage !== "waiting" && view.stage !== "hand_over";
+  if (inHand && view.variant === "omaha") return "omaha · " + view.stage;
+  return view.stage;
+}
+
 function flashStage(txt) {
   const el = $("stageLabel");
-  const prev = el.textContent;
   el.textContent = txt;
-  setTimeout(() => { if (state.view) el.textContent = state.view.stage; }, 1200);
+  setTimeout(() => { if (state.view) el.textContent = stageText(state.view); }, 1200);
 }
 
 function cardEl(code, cls = "", style = "") {
@@ -475,7 +534,7 @@ function render(view) {
   const oldBetSpots = streetCollected ? betSpots() : null;
 
   $("codeChip").textContent = view.code;
-  $("stageLabel").textContent = view.stage;
+  $("stageLabel").textContent = stageText(view);
   $("potAmt").textContent = fmt(view.pot);
   $("potJetons").innerHTML = jstackHtml(view.pot, 4);
 
@@ -542,12 +601,14 @@ function seatHtml(p, i, n) {
   if (p.is_turn) cls.push("turn");
   if (p.folded) cls.push("folded");
   if (state.winners && state.winners.has(p.name)) cls.push("winner");
+  const nHole = state.view.variant === "omaha" ? 4 : 2;
   let cards = "";
   if (p.cards)
     cards = p.cards.map((c, j) =>
       cardEl(c, "sm deal", `animation-delay:${(j * 0.12).toFixed(2)}s`)).join("");
   else if (!p.folded && state.view.stage !== "waiting" && state.view.stage !== "hand_over")
-    cards = cardEl(null, "sm") + cardEl(null, "sm");
+    cards = Array.from({ length: nHole }, () => cardEl(null, "sm")).join("");
+  const packed = (p.cards ? p.cards.length : nHole) > 2 ? " packed" : "";
   let tag = "";
   if (p.folded) tag = `<span class="tag fold">folded</span>`;
   else if (p.all_in) tag = `<span class="tag allin">all-in</span>`;
@@ -556,7 +617,7 @@ function seatHtml(p, i, n) {
     ? `<span class="bet-chip" data-amt="${p.round_bet}"><span class="jstack">${jstackHtml(p.round_bet, 3)}</span>${fmt(p.round_bet)}</span>` : "";
   const pos = seatPos(i, n);
   return `<div class="${cls.join(" ")}" data-name="${escapeHtml(p.name)}" style="left:${pos.x.toFixed(1)}%;top:${pos.y.toFixed(1)}%">
-    <div class="mini-cards">${cards}</div>
+    <div class="mini-cards${packed}">${cards}</div>
     <div class="plate">${dealer}
       <div class="nm">${escapeHtml(p.name)}</div>
       <div class="ch">${chipsHtml(p.chips)}</div>
@@ -579,6 +640,7 @@ function renderMe(view) {
         cardEl(c, "big" + (fresh ? " deal" : ""),
                fresh ? `animation-delay:${(j * 0.15).toFixed(2)}s` : "")).join("")
     : `<div class="empty-card"></div><div class="empty-card"></div>`;
+  const handCls = "hand" + (view.my_cards.length > 2 ? " h4" : "");
   meEl.dataset.name = me.name;
   let bet = "";
   if (me.round_bet)
@@ -587,7 +649,7 @@ function renderMe(view) {
     bet = `<span class="tag allin">all-in</span>`;
   const dealer = me.is_dealer ? `<span class="badge">D</span>` : "";
   meEl.innerHTML = `
-    <div class="hand">${hand}</div>
+    <div class="${handCls}">${hand}</div>
     <div class="plate">${dealer}
       <span class="nm">${escapeHtml(me.name)}</span>
       <span class="ch">${chipsHtml(me.chips)}</span>
@@ -599,7 +661,7 @@ function renderResult(view) {
   const banner = $("resultBanner");
   if (view.result && (view.stage === "hand_over" || view.stage === "showdown")) {
     const wins = view.result.winners
-      .map((w) => `<span class="win">${escapeHtml(w.name)}</span> +${fmt(w.amount)} (${escapeHtml(w.desc)})`)
+      .map((w) => `<span class="win">${escapeHtml(w.name)}</span> +${fmt(w.amount)}`)
       .join("<br>");
     banner.innerHTML = `<span class="trophy">🏆</span> ${wins}`;
     banner.classList.remove("hidden");
@@ -613,7 +675,28 @@ function renderControls(view) {
 
   // Host pre-hand / between-hands controls.
   if (view.stage === "waiting" || view.stage === "hand_over") {
-    let html = `<div class="host-actions">`;
+    let html = "";
+
+    // Mixed-mode proposal: every seated player must accept before hand #1.
+    if (view.agreement_pending) {
+      html += `<div class="agree-box">
+        <div class="agree-title">🃏 Mixed mode proposed</div>
+        <div class="agree-text">Hold'em with an <b>Omaha</b> round every
+          <b>${view.omaha_every}</b> hands. Everyone must agree before the
+          first deal (${view.agreed_count}/${view.seat_count} agreed).</div>
+        ${view.seated && !view.i_agreed
+          ? `<button class="agree-btn" onclick="doAgree()">✅ I agree — deal me in</button>`
+          : `<div class="agree-done">${view.i_agreed
+              ? "You agreed — waiting for the others…" : ""}</div>`}
+      </div>`;
+    } else if (view.mode === "mixed") {
+      const nxt = view.next_variant === "omaha" ? "OMAHA 🔥" : "Hold'em";
+      html += `<div class="next-variant">Next hand: <b>${nxt}</b></div>`;
+    } else if (view.mode === "omaha") {
+      html += `<div class="next-variant">Omaha table — 4 cards, use exactly 2</div>`;
+    }
+
+    html += `<div class="host-actions">`;
     html += `<button class="invite" onclick="invite()">📨 Invite</button>`;
     if (view.can_start) {
       const label = view.stage === "hand_over" ? "Deal now" : "Deal hand";
@@ -626,9 +709,17 @@ function renderControls(view) {
     if (view.stage === "hand_over" && view.next_hand_at) {
       html += `<div class="wait">Next hand in <span class="countdown" data-deadline="${view.next_hand_at}">…</span>s</div>`;
     } else if (!view.can_start) {
-      html += `<div class="wait">${view.is_host
-        ? "Need 2+ players with chips to deal."
-        : (view.seated ? "Waiting for the host to deal…" : "Spectating — rebuy to sit in.")}</div>`;
+      let why;
+      if (view.agreement_pending) {
+        why = view.is_host
+          ? "Waiting for everyone to agree to mixed mode…"
+          : "Waiting for all players to agree…";
+      } else {
+        why = view.is_host
+          ? "Need 2+ players with chips to deal."
+          : (view.seated ? "Waiting for the host to deal…" : "Spectating — rebuy to sit in.");
+      }
+      html += `<div class="wait">${why}</div>`;
     }
     c.innerHTML = html;
     tickCountdowns();
@@ -770,7 +861,14 @@ async function doRebuy() {
   if (r.bankroll != null) setBankroll(r.bankroll);
   state.lastJson = ""; render(r.table);
 }
+async function doAgree() {
+  if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred("light");
+  const r = await api("agree");
+  if (r.error && !r.table) return flashStage(r.error.slice(0, 40));
+  state.lastJson = ""; render(r.table || state.view);
+}
 window.invite = invite;
+window.doAgree = doAgree;
 window.joinNearby = joinNearby;
 window.doAct = doAct;
 window.doRaise = doRaise;

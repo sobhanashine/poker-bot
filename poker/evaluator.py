@@ -100,6 +100,21 @@ def best_hand(cards: list[Card]) -> tuple[HandScore, list[Card]]:
     return _score_5(list(best_combo)), list(best_combo)
 
 
+def best_hand_omaha(hole: list[Card], board: list[Card]) -> tuple[HandScore, list[Card]]:
+    """Omaha rules: the hand must use exactly 2 hole cards and 3 board cards."""
+    best_score: HandScore | None = None
+    best_cards: list[Card] = []
+    for hp in combinations(hole, 2):
+        for bp in combinations(board, 3):
+            five = list(hp) + list(bp)
+            score = _score_5(five)
+            if best_score is None or score > best_score:
+                best_score, best_cards = score, five
+    if best_score is None:
+        raise ValueError("Omaha evaluation needs hole and board cards")
+    return best_score, best_cards
+
+
 def describe(score: HandScore) -> str:
     """Human-readable name of a hand category, with primary rank when useful."""
     category = score[0]

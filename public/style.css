@@ -35,6 +35,7 @@ html, body {
   color: var(--text);
   font-family: -apple-system, "Segoe UI", Roboto, system-ui, sans-serif;
   overscroll-behavior: none;
+  overflow-x: hidden;
   min-height: 100vh;
 }
 
@@ -57,10 +58,12 @@ button { font-family: inherit; cursor: pointer; border: none; }
    Lobby
    ==================================================================== */
 
-#lobby { text-align: center; padding-top: 7vh; }
+/* Scale the lobby header down on short screens so the create/join controls
+   fit without the page (and the join button) scrolling out of view. */
+#lobby { text-align: center; padding-top: clamp(8px, 4vh, 44px); }
 
 .hero-fan {
-  position: relative; height: 120px; margin-bottom: 6px;
+  position: relative; height: clamp(76px, 14vh, 120px); margin-bottom: 6px;
   pointer-events: none;
   animation: heroFloat 5s ease-in-out infinite;
 }
@@ -115,7 +118,7 @@ button { font-family: inherit; cursor: pointer; border: none; }
 }
 .divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: var(--line); }
 
-.join-row { display: flex; gap: 8px; }
+.join-row { display: flex; gap: 8px; scroll-margin: 90px; }
 .join-row input {
   flex: 1; background: var(--panel); color: var(--gold);
   border: 1px solid var(--line); border-radius: 12px;
@@ -131,13 +134,20 @@ button { font-family: inherit; cursor: pointer; border: none; }
 .msg { min-height: 20px; margin-top: 14px; color: var(--danger); font-size: 14px; }
 .msg.ok { color: var(--good); }
 
+/* ---- Mode picker ---- */
+.mode-hint {
+  color: var(--hint); font-size: 12px; margin: -8px 0 16px;
+  line-height: 1.5;
+}
+
 /* ---- Player profile card (persistent bankroll) ---- */
 .profile-card {
-  display: flex; align-items: center; gap: 12px;
+  display: flex; align-items: center; gap: 12px; width: 100%;
   background: var(--panel); border: 1px solid var(--line);
   border-radius: 14px; padding: 12px 14px; margin: 0 0 16px;
-  text-align: left;
+  text-align: left; color: var(--text); font: inherit;
 }
+.profile-card:active { filter: brightness(1.15); }
 .profile-card .avatar {
   width: 42px; height: 42px; border-radius: 50%; flex: none;
   display: flex; align-items: center; justify-content: center;
@@ -669,8 +679,95 @@ button { font-family: inherit; cursor: pointer; border: none; }
 }
 .logbox li { margin: 2px 0; }
 
+/* ====================================================================
+   Omaha (4 hole cards)
+   ==================================================================== */
+
+/* My hand: four cards fanned tighter than the two-card spread. */
+.me .hand.h4 .card { margin: 0 -14px; }
+.me .hand.h4 .card:nth-child(1) { transform: rotate(-10deg) translateY(5px); }
+.me .hand.h4 .card:nth-child(2) { transform: rotate(-3.5deg) translateY(1px); }
+.me .hand.h4 .card:nth-child(3) { transform: rotate(3.5deg)  translateY(1px); }
+.me .hand.h4 .card:nth-child(4) { transform: rotate(10deg)   translateY(5px); }
+
+/* Opponents' four face-down/revealed minis overlap to fit the seat width. */
+.mini-cards.packed { gap: 0; }
+.mini-cards.packed .card { margin: 0 -5px; }
+
+/* ====================================================================
+   Mixed-mode agreement
+   ==================================================================== */
+
+.agree-box {
+  background: var(--panel); border: 1px solid rgba(245, 196, 81, .45);
+  border-radius: 14px; padding: 14px; margin-bottom: 10px; text-align: center;
+  box-shadow: 0 0 14px rgba(245, 196, 81, .12);
+}
+.agree-title { font-weight: 900; color: var(--gold); margin-bottom: 6px; }
+.agree-text { color: var(--hint); font-size: 13px; line-height: 1.5; }
+.agree-text b { color: var(--text); }
+.agree-btn {
+  margin-top: 12px; width: 100%;
+  background: linear-gradient(180deg, #3fd98c 0%, #1da55f 100%);
+  color: #04210f; border-radius: 12px; padding: 13px;
+  font-size: 15px; font-weight: 800;
+}
+.agree-done { color: var(--good); font-size: 13px; font-weight: 700; margin-top: 8px; }
+
+.next-variant {
+  text-align: center; color: var(--hint); font-size: 13px;
+  padding: 6px 0 10px; font-weight: 600;
+}
+.next-variant b { color: var(--gold); }
+
+/* ====================================================================
+   Profile modal
+   ==================================================================== */
+
+.modal {
+  position: fixed; inset: 0; z-index: 100;
+  background: rgba(4, 6, 10, .72);
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+  animation: screenIn .2s ease-out;
+}
+.modal-box {
+  position: relative; width: 100%; max-width: 380px;
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: 18px; padding: 20px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .6);
+}
+.modal-close {
+  position: absolute; top: 10px; right: 10px;
+  width: 32px; height: 32px; border-radius: 10px;
+  background: var(--panel-2); color: var(--hint);
+  border: 1px solid var(--line); font-size: 14px;
+}
+.modal-head { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; }
+.avatar.big { width: 54px; height: 54px; font-size: 24px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center; flex: none;
+  background: linear-gradient(180deg, var(--gold) 0%, var(--gold-2) 100%);
+  color: #2a1c02; font-weight: 900; }
+.pm-name { font-weight: 900; font-size: 18px; }
+.pm-since { color: var(--hint); font-size: 12px; margin-top: 3px; }
+.pm-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.pm-stat {
+  background: var(--panel-2); border: 1px solid var(--line);
+  border-radius: 12px; padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.pm-stat .v {
+  font-weight: 900; font-size: 17px; color: var(--gold);
+  font-variant-numeric: tabular-nums;
+}
+.pm-stat .k {
+  color: var(--hint); font-size: 11px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .6px;
+}
+
 /* small screens: keep table compact */
 @media (max-height: 700px) {
   .felt { max-height: 52vh; }
   .card.big { width: 50px; height: 70px; }
+  .me .hand.h4 .card { margin: 0 -16px; }
 }

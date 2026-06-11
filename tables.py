@@ -39,6 +39,15 @@ _BETTING = {Stage.PREFLOP, Stage.FLOP, Stage.TURN, Stage.RIVER}
 _ACTION_BY_NAME = {a.value: a for a in Action}
 _PREACTIONS = {"check_fold", "call_any", "check"}
 
+# Game modes:
+#   holdem — every hand is Texas Hold'em
+#   omaha  — every hand is Omaha (4 hole cards, use exactly 2)
+#   mixed  — Hold'em, but every Nth hand is Omaha. Because this changes the
+#            game everyone signed up for, all seated players must agree
+#            before the first hand can be dealt.
+MODES = {"holdem", "omaha", "mixed"}
+DEFAULT_OMAHA_EVERY = 2
+
 
 def _key(code: str) -> str:
     return f"poker:table:{code}"
@@ -89,11 +98,16 @@ def _eligible(game: Game) -> list:
 def create_table(host_id: int, host_name: str, small_blind: int = 10,
                  big_blind: int = 20, starting_stack: int = DEFAULT_STACK,
                  turn_seconds: int = DEFAULT_TURN_SECONDS,
-                 lat: float | None = None, lon: float | None = None) -> dict:
+                 lat: float | None = None, lon: float | None = None,
+                 mode: str = "holdem",
+                 omaha_every: int = DEFAULT_OMAHA_EVERY) -> dict:
     small_blind = max(1, int(small_blind))
     big_blind = max(small_blind + 1, int(big_blind))
     starting_stack = max(big_blind * 5, int(starting_stack))
     turn_seconds = min(180, max(10, int(turn_seconds)))
+    if mode not in MODES:
+        mode = "holdem"
+    omaha_every = min(10, max(2, int(omaha_every)))
 
     # The buy-in comes out of the host's persistent bankroll (escrowed back
     # when they leave). You can never sit down with more than you own.
@@ -113,13 +127,16 @@ def create_table(host_id: int, host_name: str, small_blind: int = 10,
 
     game = Game(chat_id=abs(hash(code)) % (10**9),
                 small_blind=small_blind, big_blind=big_blind,
-                starting_stack=starting_stack)
+                starting_stack=starting_stack,
+                variant="omaha" if mode == "omaha" else "holdem")
     game.add_player(host_id, host_name)
 
     # Geo-tagged tables show up for nearby players looking for a game.
     if lat is not None and lon is not None:
         nearby.register_table(code, lat, lon, host_name,
                               small_blind, big_blind, starting_stack)
+    mode_label = {"holdem": "Hold'em", "omaha": "Omaha",
+                  "mixed": f"Mixed (Omaha every {omaha_every} hands)"}[mode]
     table = {
         "code": code,
         "host_id": host_id,
@@ -127,11 +144,16 @@ def create_table(host_id: int, host_name: str, small_blind: int = 10,
         "members": {host_id: host_name},
         "buy_in": starting_stack,
         "turn_seconds": turn_seconds,
+        "mode": mode,
+        "omaha_every": omaha_every,
+        # Mixed mode must be agreed by every seated player before the first
+        # deal. The host proposed it, so they count as agreed already.
+        "agreed": [host_id] if mode == "mixed" else [],
         "preactions": {},
         "turn_uid": None,
         "turn_deadline": None,
         "next_hand_at": None,
-        "log": [f"{host_name} created the table"],
+        "log": [f"{host_name} created the table ({mode_label})"],
         "result": None,
         "hand_no": 0,
         "created_at": _now(),
@@ -180,6 +202,8 @@ def leave_table(code: str, user_id: int) -> dict | None:
         p.chips = 0
         table.get("members", {}).pop(user_id, None)
         table["preactions"].pop(user_id, None)
+        if user_id in table.get("agreed", []):
+            table["agreed"].remove(user_id)
         table["log"].append(f"{name} left")
         if user_id == table["host_id"] and game.players:
             table["host_id"] = game.players[0].user_id
@@ -233,10 +257,45 @@ def start_hand(code: str, user_id: int) -> dict:
         raise GameError("A hand is already running.")
     if len(_eligible(game)) < 2:
         raise GameError("Need at least 2 players with chips.")
+    if _agreement_pending(table):
+        raise GameError("Everyone must agree to the mixed Omaha mode first.")
     _deal(table)
     _tick(table)
     _save(code, table)
     return table
+
+
+def agree_mode(code: str, user_id: int) -> dict:
+    """A seated player accepts the table's mixed Omaha proposal."""
+    table = _load(code)
+    if table is None:
+        raise GameError("Table not found.")
+    game: Game = table["game"]
+    if table.get("mode") != "mixed":
+        raise GameError("This table has nothing to agree to.")
+    p = game.find(user_id)
+    if p is None:
+        raise GameError("Take a seat first.")
+    agreed = table.setdefault("agreed", [])
+    if user_id not in agreed:
+        agreed.append(user_id)
+        table["log"].append(f"{p.name} agreed to mixed Omaha")
+    _tick(table)
+    _save(code, table)
+    return table
+
+
+def _agreement_pending(table: dict) -> bool:
+    """True while a mixed table still needs sign-off from seated players.
+
+    Only gates the first deal — players who join mid-session can see the
+    mode before sitting down, so joining is itself the agreement.
+    """
+    if table.get("mode") != "mixed" or table.get("hand_no", 0) > 0:
+        return False
+    game: Game = table["game"]
+    agreed = set(table.get("agreed", []))
+    return any(p.user_id not in agreed for p in game.players)
 
 
 def act(code: str, user_id: int, action_name: str, amount: int = 0) -> dict:
@@ -286,17 +345,32 @@ def set_preaction(code: str, user_id: int, mode: str) -> dict:
 # --------------------------------------------------------------------------- #
 # Progression engine (timeouts, pre-actions, auto-deal)
 # --------------------------------------------------------------------------- #
+def _hand_variant(table: dict, hand_no: int) -> str:
+    mode = table.get("mode", "holdem")
+    if mode == "omaha":
+        return "omaha"
+    if mode == "mixed":
+        every = table.get("omaha_every", DEFAULT_OMAHA_EVERY)
+        if hand_no % every == 0:
+            return "omaha"
+    return "holdem"
+
+
 def _deal(table: dict) -> None:
     game: Game = table["game"]
     if game.stage == Stage.HAND_OVER:
         game.cleanup_after_hand()
-    game.start_hand()
+    hand_no = table.get("hand_no", 0) + 1
+    variant = _hand_variant(table, hand_no)
+    game.start_hand(variant=variant)
     table["result"] = None
     table["preactions"] = {}
     table["next_hand_at"] = None
     table["turn_uid"] = None
-    table["hand_no"] = table.get("hand_no", 0) + 1
-    _push_log(table, f"Hand #{table['hand_no']} dealt")
+    table["hand_no"] = hand_no
+    label = " — OMAHA round!" if (
+        variant == "omaha" and table.get("mode") == "mixed") else ""
+    _push_log(table, f"Hand #{hand_no} dealt{label}")
 
 
 def _set_deadline(table: dict) -> None:
@@ -384,25 +458,27 @@ def _resolve_if_over(table: dict) -> None:
             "board": [c.code for c in game.board],
             "revealed": {},
             "winners": [{"id": winner.user_id, "name": winner.name,
-                         "amount": out["amount"], "desc": "others folded"}],
+                         "amount": out["amount"]}],
         }
-        _push_log(table, f"{winner.name} won {out['amount']} (others folded)")
+        _push_log(table, f"{winner.name} won {out['amount']}")
         _settle_profiles(table)
     elif game.stage == Stage.SHOWDOWN:
         res = game.showdown()
         revealed = {uid: [c.code for c in cards]
                     for uid, cards in res.revealed.items()}
         winners = []
+        # The hand-category description is deliberately dropped: players see
+        # the cards, not a "Pair of Ks"-style hint.
         for pot in res.pots:
-            for uid, desc, amt in pot["winners"]:
+            for uid, _desc, amt in pot["winners"]:
                 p = game.find(uid)
                 winners.append({"id": uid, "name": p.name if p else "?",
-                                "amount": amt, "desc": desc})
+                                "amount": amt})
         table["result"] = {"type": "showdown",
                             "board": [c.code for c in game.board],
                             "revealed": revealed, "winners": winners}
         for w in winners:
-            _push_log(table, f"{w['name']} won {w['amount']} — {w['desc']}")
+            _push_log(table, f"{w['name']} won {w['amount']}")
         _settle_profiles(table)
 
 
@@ -481,6 +557,11 @@ def view(table: dict, user_id: int) -> dict:
         game.stage not in _BETTING and me is not None
         and me.chips < table["buy_in"])
 
+    mode = table.get("mode", "holdem")
+    agreed = table.get("agreed", [])
+    pending = _agreement_pending(table)
+    next_variant = _hand_variant(table, table.get("hand_no", 0) + 1)
+
     return {
         "code": table["code"],
         "stage": game.stage.value,
@@ -491,6 +572,14 @@ def view(table: dict, user_id: int) -> dict:
         "big_blind": game.big_blind,
         "buy_in": table["buy_in"],
         "hand_no": table.get("hand_no", 0),
+        "mode": mode,
+        "omaha_every": table.get("omaha_every", DEFAULT_OMAHA_EVERY),
+        "variant": getattr(game, "hand_variant", "holdem"),
+        "next_variant": next_variant,
+        "agreement_pending": pending,
+        "i_agreed": user_id in agreed,
+        "agreed_count": sum(1 for p in game.players if p.user_id in agreed),
+        "seat_count": len(game.players),
         "host_id": table["host_id"],
         "is_host": (user_id == table["host_id"]),
         "players": players,
@@ -517,6 +606,8 @@ def _can_start(table: dict, user_id: int) -> bool:
     if user_id != table["host_id"]:
         return False
     if game.stage in _BETTING:
+        return False
+    if _agreement_pending(table):
         return False
     return len(_eligible(game)) >= 2
 

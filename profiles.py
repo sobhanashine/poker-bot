@@ -55,6 +55,7 @@ def get_or_create(uid: int, name: str) -> dict:
             "hands_played": 0,
             "hands_won": 0,
             "biggest_pot": 0,
+            "total_won": 0,
             "active": None,  # {"code", "stack"} while seated at a table
             "created_at": _now(),
         }
@@ -124,6 +125,7 @@ def record_hand(uid: int, code: str, stack: int, won: bool, pot: int) -> None:
     if won:
         prof["hands_won"] = prof.get("hands_won", 0) + 1
         prof["biggest_pot"] = max(prof.get("biggest_pot", 0), int(pot))
+        prof["total_won"] = prof.get("total_won", 0) + int(pot)
     active = prof.get("active")
     if active and active["code"] == code:
         active["stack"] = int(stack)
@@ -132,6 +134,7 @@ def record_hand(uid: int, code: str, stack: int, won: bool, pot: int) -> None:
 
 def view(prof: dict) -> dict:
     """Public shape sent to the Mini App."""
+    in_play = int((prof.get("active") or {}).get("stack", 0))
     return {
         "id": prof["id"],
         "name": prof.get("name", ""),
@@ -139,5 +142,9 @@ def view(prof: dict) -> dict:
         "hands_played": prof.get("hands_played", 0),
         "hands_won": prof.get("hands_won", 0),
         "biggest_pot": prof.get("biggest_pot", 0),
+        "total_won": prof.get("total_won", 0),
+        "in_play": in_play,
+        "net_worth": prof.get("chips", 0) + in_play,
+        "created_at": prof.get("created_at"),
         "active_code": (prof.get("active") or {}).get("code"),
     }

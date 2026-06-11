@@ -17,18 +17,40 @@
         <div class="card red"><span class="corner"><b>K</b><i>♦</i></span><span class="pip">♦</span><span class="corner br"><b>K</b><i>♦</i></span></div>
         <div class="card"><span class="corner"><b>K</b><i>♣</i></span><span class="pip">♣</span><span class="corner br"><b>K</b><i>♣</i></span></div>
       </div>
-      <div class="brand">Hold'em</div>
-      <p class="sub">No-limit Texas Hold'em with friends, right inside Telegram.</p>
+      <div class="brand">Poker</div>
+      <p class="sub">No-limit Hold'em &amp; Omaha with friends, right inside Telegram.</p>
 
       <!-- Persistent player profile (bankroll lives across tables) -->
-      <div id="profileCard" class="profile-card hidden">
+      <button id="profileCard" class="profile-card hidden">
         <div class="avatar" id="profAvatar">?</div>
         <div class="pinfo">
           <div class="pname" id="profName">…</div>
           <div class="pstats" id="profStats"></div>
         </div>
         <div class="pchips"><i class="jeton j-go"></i><span id="profChips">0</span></div>
+      </button>
+
+      <div class="opts">
+        <label>Mode
+          <select id="optMode">
+            <option value="holdem" selected>Hold'em</option>
+            <option value="omaha">Omaha</option>
+            <option value="mixed">Mixed</option>
+          </select>
+        </label>
+        <label id="omahaEveryWrap" class="hidden">Omaha every
+          <select id="optOmahaEvery">
+            <option value="2" selected>2 hands</option>
+            <option value="3">3 hands</option>
+            <option value="4">4 hands</option>
+            <option value="5">5 hands</option>
+          </select>
+        </label>
       </div>
+      <p id="modeHint" class="mode-hint hidden">
+        Mixed deals Hold'em, with an Omaha round every few hands.
+        All players must agree before the first deal.
+      </p>
 
       <div class="opts">
         <label>Blinds
@@ -80,6 +102,30 @@
 
       <div id="lobbyMsg" class="msg"></div>
     </section>
+
+    <!-- Full player profile (opened by tapping the profile card) -->
+    <div id="profileModal" class="modal hidden">
+      <div class="modal-box">
+        <button id="profileClose" class="modal-close">✕</button>
+        <div class="modal-head">
+          <div class="avatar big" id="pmAvatar">?</div>
+          <div>
+            <div class="pm-name" id="pmName">…</div>
+            <div class="pm-since" id="pmSince"></div>
+          </div>
+        </div>
+        <div class="pm-grid">
+          <div class="pm-stat"><span class="v" id="pmBankroll">0</span><span class="k">Bankroll</span></div>
+          <div class="pm-stat"><span class="v" id="pmInPlay">0</span><span class="k">In play</span></div>
+          <div class="pm-stat"><span class="v" id="pmHands">0</span><span class="k">Hands played</span></div>
+          <div class="pm-stat"><span class="v" id="pmWins">0</span><span class="k">Hands won</span></div>
+          <div class="pm-stat"><span class="v" id="pmWinRate">0%</span><span class="k">Win rate</span></div>
+          <div class="pm-stat"><span class="v" id="pmBiggest">0</span><span class="k">Biggest pot</span></div>
+          <div class="pm-stat"><span class="v" id="pmTotalWon">0</span><span class="k">Total won</span></div>
+          <div class="pm-stat"><span class="v" id="pmTable">—</span><span class="k">Current table</span></div>
+        </div>
+      </div>
+    </div>
 
     <!-- Table -->
     <section id="table" class="screen hidden">

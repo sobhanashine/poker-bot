@@ -141,3 +141,47 @@ if __name__ == "__main__":
             traceback.print_exc()
     print(f"\n{len(funcs) - failed}/{len(funcs)} passed")
     sys.exit(1 if failed else 0)
+
+
+def test_omaha_deals_four_hole_cards():
+    g = Game(chat_id=1, seed=7, variant="omaha")
+    g.add_player(1, "Alice")
+    g.add_player(2, "Bob")
+    g.start_hand()
+    assert all(len(p.hole) == 4 for p in g.players)
+    assert g.hand_variant == "omaha"
+
+
+def test_omaha_per_hand_variant_override():
+    # A hold'em table can deal a single Omaha hand (mixed mode).
+    g = Game(chat_id=1, seed=7)
+    g.add_player(1, "Alice")
+    g.add_player(2, "Bob")
+    g.start_hand(variant="omaha")
+    assert all(len(p.hole) == 4 for p in g.players)
+    g.cleanup_after_hand()
+    g.start_hand()  # back to the table default
+    assert all(len(p.hole) == 2 for p in g.players)
+    assert g.hand_variant == "holdem"
+
+
+def test_omaha_must_use_exactly_two_hole_cards():
+    from poker.evaluator import best_hand_omaha
+    # Four spades on the board, only one in the hole: hold'em rules would
+    # make a flush, Omaha rules (exactly 2 hole cards) must not.
+    hole = hand("As 2h 7d 8c")
+    board = hand("Ks Qs Js 3s 9h")
+    assert evaluate(hole[:1] + board)[0] == FLUSH  # hold'em-style: flush
+    score, cards = best_hand_omaha(hole, board)
+    assert score[0] == HIGH_CARD
+    assert len(cards) == 5
+    assert sum(1 for c in cards if c in hole) == 2
+    assert sum(1 for c in cards if c in board) == 3
+
+
+def test_omaha_pair_in_hole_plays():
+    from poker.evaluator import best_hand_omaha
+    hole = hand("Ah Ad 7c 2s")
+    board = hand("Ac Kh 9d 5s 3h")
+    score, _ = best_hand_omaha(hole, board)
+    assert score[0] == THREE_OF_A_KIND

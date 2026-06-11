@@ -10,7 +10,9 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 from .cards import Card, Deck
-from .evaluator import best_hand, describe
+from .evaluator import best_hand, best_hand_omaha, describe
+
+HOLE_CARDS = {"holdem": 2, "omaha": 4}
 
 
 class Stage(Enum):
@@ -71,12 +73,15 @@ class GameError(Exception):
 
 class Game:
     def __init__(self, chat_id: int, small_blind: int = 10, big_blind: int = 20,
-                 starting_stack: int = 1000, seed: int | None = None):
+                 starting_stack: int = 1000, seed: int | None = None,
+                 variant: str = "holdem"):
         self.chat_id = chat_id
         self.small_blind = small_blind
         self.big_blind = big_blind
         self.starting_stack = starting_stack
         self._seed = seed
+        self.variant = variant            # default for every hand
+        self.hand_variant = variant       # variant of the hand in progress
 
         self.players: list[Player] = []
         self.stage: Stage = Stage.WAITING
@@ -127,10 +132,11 @@ class Game:
     # ------------------------------------------------------------------ #
     # Hand lifecycle
     # ------------------------------------------------------------------ #
-    def start_hand(self) -> None:
+    def start_hand(self, variant: str | None = None) -> None:
         eligible = [p for p in self.players if p.chips > 0]
         if len(eligible) < 2:
             raise GameError("برای شروع دست حداقل به ۲ بازیکن با ژتون نیاز است.")
+        self.hand_variant = variant or getattr(self, "variant", "holdem")
 
         # Drop broke players from the table.
         self.players = [p for p in self.players if p.chips > 0]
@@ -200,7 +206,8 @@ class Game:
 
     def _deal_holes(self) -> None:
         assert self.deck is not None
-        for _ in range(2):
+        n = HOLE_CARDS.get(getattr(self, "hand_variant", "holdem"), 2)
+        for _ in range(n):
             for p in self.players:
                 if p.in_hand:
                     p.hole.append(self.deck.deal_one())
@@ -418,10 +425,14 @@ class Game:
         revealed: dict[int, list[Card]] = {}
 
         # Evaluate every contender once.
+        omaha = getattr(self, "hand_variant", "holdem") == "omaha"
         scores: dict[int, tuple] = {}
         for p in self.players:
             if not p.folded and p.hole:
-                score, _ = best_hand(p.hole + self.board)
+                if omaha:
+                    score, _ = best_hand_omaha(p.hole, self.board)
+                else:
+                    score, _ = best_hand(p.hole + self.board)
                 scores[p.user_id] = score
                 revealed[p.user_id] = p.hole
 

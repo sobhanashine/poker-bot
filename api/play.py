@@ -5,11 +5,13 @@ We authenticate the Telegram user from initData, dispatch the operation against
 the shared table store, and return the user-specific view as JSON.
 
 Ops:
-    create  {small_blind?, big_blind?, lat?, lon?} -> create a table, host joins
+    create  {small_blind?, big_blind?, mode?, omaha_every?, lat?, lon?}
+                                              -> create a table, host joins
     join    {code}                            -> join an existing table
     state   {code}                            -> poll latest view
     start   {code}                            -> host deals a hand
     act     {code, action, amount?}           -> take a poker action
+    agree   {code}                            -> accept the mixed Omaha mode
     leave   {code}                            -> leave the table
     profile {}                                -> persistent profile (bankroll, stats)
     nearby  {lat, lon}                        -> register presence + discover
@@ -70,6 +72,8 @@ def _handle(data: dict) -> tuple[int, dict]:
                 turn_seconds=int(data.get("turn_seconds", tables.DEFAULT_TURN_SECONDS)),
                 lat=float(lat) if lat is not None else None,
                 lon=float(lon) if lon is not None else None,
+                mode=str(data.get("mode", "holdem")),
+                omaha_every=int(data.get("omaha_every", tables.DEFAULT_OMAHA_EVERY)),
             )
         elif op == "join":
             if not code:
@@ -88,6 +92,8 @@ def _handle(data: dict) -> tuple[int, dict]:
                 code, uid, data.get("action", ""), int(data.get("amount", 0)))
         elif op == "preaction":
             table = tables.set_preaction(code, uid, data.get("mode", "none"))
+        elif op == "agree":
+            table = tables.agree_mode(code, uid)
         elif op == "rebuy":
             table = tables.rebuy(code, uid)
         elif op == "leave":

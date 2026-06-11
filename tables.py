@@ -24,6 +24,8 @@ import time
 
 from poker.game import Action, Game, GameError, Stage
 
+import nearby
+import profiles
 import store  # reuse the configured Upstash REST client
 
 TABLE_TTL_SECONDS = 60 * 60 * 12   # tables auto-expire after 12h of inactivity
@@ -86,11 +88,20 @@ def _eligible(game: Game) -> list:
 # --------------------------------------------------------------------------- #
 def create_table(host_id: int, host_name: str, small_blind: int = 10,
                  big_blind: int = 20, starting_stack: int = DEFAULT_STACK,
-                 turn_seconds: int = DEFAULT_TURN_SECONDS) -> dict:
+                 turn_seconds: int = DEFAULT_TURN_SECONDS,
+                 lat: float | None = None, lon: float | None = None) -> dict:
     small_blind = max(1, int(small_blind))
     big_blind = max(small_blind + 1, int(big_blind))
     starting_stack = max(big_blind * 5, int(starting_stack))
     turn_seconds = min(180, max(10, int(turn_seconds)))
+
+    # The buy-in comes out of the host's persistent bankroll (escrowed back
+    # when they leave). You can never sit down with more than you own.
+    prof = profiles.reconcile(profiles.get_or_create(host_id, host_name))
+    if prof["chips"] < starting_stack:
+        raise GameError(
+            f"موجودی شما برای این بای‌این کافی نیست "
+            f"(نیاز: {starting_stack}، دارایی: {prof['chips']}).")
 
     code = _gen_code()
     for _ in range(5):
@@ -98,10 +109,17 @@ def create_table(host_id: int, host_name: str, small_blind: int = 10,
             break
         code = _gen_code()
 
+    profiles.debit_buy_in(prof, code, starting_stack)
+
     game = Game(chat_id=abs(hash(code)) % (10**9),
                 small_blind=small_blind, big_blind=big_blind,
                 starting_stack=starting_stack)
     game.add_player(host_id, host_name)
+
+    # Geo-tagged tables show up for nearby players looking for a game.
+    if lat is not None and lon is not None:
+        nearby.register_table(code, lat, lon, host_name,
+                              small_blind, big_blind, starting_stack)
     table = {
         "code": code,
         "host_id": host_id,
@@ -131,6 +149,10 @@ def join_table(code: str, user_id: int, name: str) -> dict:
     if game.find(user_id) is None:
         if game.stage in _BETTING:
             raise GameError("A hand is in progress; you'll be seated next hand.")
+        if len(game.players) >= MAX_SEATS:
+            raise GameError("Table is full.")
+        prof = profiles.reconcile(profiles.get_or_create(user_id, name))
+        profiles.debit_buy_in(prof, code, table["buy_in"])
         _seat_player(game, user_id, name, table["buy_in"])
         table["log"].append(f"{name} joined")
     table.setdefault("members", {})[user_id] = name
@@ -151,6 +173,11 @@ def leave_table(code: str, user_id: int) -> dict | None:
             game.remove_player(user_id)
         except GameError:
             pass
+        # Cash the remaining stack back to the bankroll. If removal was
+        # deferred (mid-hand fold-out), zero the seat so the chips can't be
+        # paid twice when the seat is dropped at cleanup.
+        profiles.credit_leave(user_id, code, p.chips)
+        p.chips = 0
         table.get("members", {}).pop(user_id, None)
         table["preactions"].pop(user_id, None)
         table["log"].append(f"{name} left")
@@ -172,13 +199,22 @@ def rebuy(code: str, user_id: int, amount: int | None = None) -> dict:
     name = table.get("members", {}).get(user_id, f"Player {user_id}")
     p = game.find(user_id)
     if p is None:
+        if len(game.players) >= MAX_SEATS:
+            raise GameError("Table is full.")
+        prof = profiles.reconcile(profiles.get_or_create(user_id, name))
+        profiles.debit_buy_in(prof, code, buy_in)
         _seat_player(game, user_id, name, buy_in)
         table["log"].append(f"{name} bought in for {buy_in}")
     else:
         if p.chips >= buy_in:
             raise GameError("Your stack is already full.")
         topup = buy_in - p.chips
-        p.chips = buy_in
+        prof = profiles.reconcile(profiles.get_or_create(user_id, name))
+        if prof["chips"] <= 0:
+            raise GameError("موجودی شما برای خرید مجدد کافی نیست.")
+        topup = min(topup, prof["chips"])  # top up as far as the bankroll allows
+        profiles.debit_buy_in(prof, code, topup)
+        p.chips += topup
         p.sitting_out = False
         table["log"].append(f"{p.name} topped up (+{topup})")
     _tick(table)
@@ -351,6 +387,7 @@ def _resolve_if_over(table: dict) -> None:
                          "amount": out["amount"], "desc": "others folded"}],
         }
         _push_log(table, f"{winner.name} won {out['amount']} (others folded)")
+        _settle_profiles(table)
     elif game.stage == Stage.SHOWDOWN:
         res = game.showdown()
         revealed = {uid: [c.code for c in cards]
@@ -366,6 +403,29 @@ def _resolve_if_over(table: dict) -> None:
                             "revealed": revealed, "winners": winners}
         for w in winners:
             _push_log(table, f"{w['name']} won {w['amount']} — {w['desc']}")
+        _settle_profiles(table)
+
+
+def _settle_profiles(table: dict) -> None:
+    """After a hand resolves: update stats + bankroll stack snapshots.
+
+    The snapshot is what gets refunded if the table later expires, so it must
+    be taken here, after payouts, at every hand boundary.
+    """
+    game: Game = table["game"]
+    result = table.get("result") or {}
+    won_amount: dict[int, int] = {}
+    for w in result.get("winners", []):
+        won_amount[w["id"]] = won_amount.get(w["id"], 0) + w["amount"]
+    for p in game.players:
+        if not p.hole:  # was not dealt into this hand
+            continue
+        try:
+            profiles.record_hand(p.user_id, table["code"], p.chips,
+                                 won=p.user_id in won_amount,
+                                 pot=won_amount.get(p.user_id, 0))
+        except Exception:  # noqa: BLE001 — stats must never break the game
+            pass
 
 
 def _push_log(table: dict, line: str) -> None:

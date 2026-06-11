@@ -20,6 +20,16 @@
       <div class="brand">Hold'em</div>
       <p class="sub">No-limit Texas Hold'em with friends, right inside Telegram.</p>
 
+      <!-- Persistent player profile (bankroll lives across tables) -->
+      <div id="profileCard" class="profile-card hidden">
+        <div class="avatar" id="profAvatar">?</div>
+        <div class="pinfo">
+          <div class="pname" id="profName">…</div>
+          <div class="pstats" id="profStats"></div>
+        </div>
+        <div class="pchips"><i class="jeton j-go"></i><span id="profChips">0</span></div>
+      </div>
+
       <div class="opts">
         <label>Blinds
           <select id="optBlinds">
@@ -48,6 +58,11 @@
         </label>
       </div>
 
+      <label class="chk">
+        <input type="checkbox" id="optNearby" />
+        Show my table to nearby players
+      </label>
+
       <button id="btnCreate" class="primary">Create a table</button>
       <div class="divider"><span>or join one</span></div>
       <div class="join-row">
@@ -55,6 +70,14 @@
                maxlength="6" placeholder="CODE" />
         <button id="btnJoin" class="ghost">Join</button>
       </div>
+
+      <div class="divider"><span>or play with people nearby</span></div>
+      <button id="btnNearby" class="ghost wide">📍 Find nearby tables</button>
+      <div id="nearbyPanel" class="nearby hidden">
+        <div id="nearbyList"></div>
+        <div id="nearbyPlayers" class="nearby-players"></div>
+      </div>
+
       <div id="lobbyMsg" class="msg"></div>
     </section>
 

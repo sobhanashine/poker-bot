@@ -5,12 +5,15 @@ We authenticate the Telegram user from initData, dispatch the operation against
 the shared table store, and return the user-specific view as JSON.
 
 Ops:
-    create  {small_blind?, big_blind?}        -> create a table, host joins
+    create  {small_blind?, big_blind?, lat?, lon?} -> create a table, host joins
     join    {code}                            -> join an existing table
     state   {code}                            -> poll latest view
     start   {code}                            -> host deals a hand
     act     {code, action, amount?}           -> take a poker action
     leave   {code}                            -> leave the table
+    profile {}                                -> persistent profile (bankroll, stats)
+    nearby  {lat, lon}                        -> register presence + discover
+                                                 nearby tables/players
 """
 from __future__ import annotations
 
@@ -22,6 +25,8 @@ from http.server import BaseHTTPRequestHandler
 # Make repo-root modules importable (tables, tgauth, store, poker/).
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import nearby as nearby_mod
+import profiles
 import tables
 from poker.game import GameError
 from tgauth import AuthError, display_name, verify_init_data
@@ -43,13 +48,28 @@ def _handle(data: dict) -> tuple[int, dict]:
     code = (data.get("code") or auth.get("start_param") or "").strip().upper()
 
     try:
-        if op == "create":
+        if op == "profile":
+            prof = profiles.reconcile(profiles.get_or_create(uid, name))
+            return 200, {"ok": True, "profile": profiles.view(prof)}
+        elif op == "nearby":
+            try:
+                lat, lon = float(data["lat"]), float(data["lon"])
+            except (KeyError, TypeError, ValueError):
+                return 400, {"error": "missing lat/lon"}
+            nearby_mod.update_presence(uid, name, lat, lon)
+            out = nearby_mod.discover(lat, lon, exclude_uid=uid)
+            return 200, {"ok": True, "nearby": out}
+        elif op == "create":
+            lat = data.get("lat")
+            lon = data.get("lon")
             table = tables.create_table(
                 uid, name,
                 small_blind=int(data.get("small_blind", 10)),
                 big_blind=int(data.get("big_blind", 20)),
                 starting_stack=int(data.get("starting_stack", tables.DEFAULT_STACK)),
                 turn_seconds=int(data.get("turn_seconds", tables.DEFAULT_TURN_SECONDS)),
+                lat=float(lat) if lat is not None else None,
+                lon=float(lon) if lon is not None else None,
             )
         elif op == "join":
             if not code:
@@ -72,7 +92,9 @@ def _handle(data: dict) -> tuple[int, dict]:
             table = tables.rebuy(code, uid)
         elif op == "leave":
             tables.leave_table(code, uid)
-            return 200, {"ok": True, "left": True}
+            prof = profiles.load(uid)
+            return 200, {"ok": True, "left": True,
+                         "bankroll": prof["chips"] if prof else None}
         else:
             return 400, {"error": f"unknown op: {op}"}
     except GameError as e:
@@ -82,7 +104,12 @@ def _handle(data: dict) -> tuple[int, dict]:
         traceback.print_exc()
         return 500, {"error": f"server error: {e}"}
 
-    return 200, {"ok": True, "table": tables.view(table, uid)}
+    payload = {"ok": True, "table": tables.view(table, uid)}
+    if op in ("create", "join", "rebuy"):  # ops that move bankroll chips
+        prof = profiles.load(uid)
+        if prof:
+            payload["bankroll"] = prof["chips"]
+    return 200, payload
 
 
 def _safe_view(code: str, uid: int) -> dict | None:

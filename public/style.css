@@ -131,6 +131,49 @@ button { font-family: inherit; cursor: pointer; border: none; }
 .msg { min-height: 20px; margin-top: 14px; color: var(--danger); font-size: 14px; }
 .msg.ok { color: var(--good); }
 
+/* ---- Player profile card (persistent bankroll) ---- */
+.profile-card {
+  display: flex; align-items: center; gap: 12px;
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: 14px; padding: 12px 14px; margin: 0 0 16px;
+  text-align: left;
+}
+.profile-card .avatar {
+  width: 42px; height: 42px; border-radius: 50%; flex: none;
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(180deg, var(--gold) 0%, var(--gold-2) 100%);
+  color: #2a1c02; font-weight: 900; font-size: 19px;
+}
+.profile-card .pinfo { flex: 1; min-width: 0; }
+.profile-card .pname {
+  font-weight: 800; font-size: 15px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.profile-card .pstats { color: var(--hint); font-size: 12px; margin-top: 2px; }
+.profile-card .pchips {
+  display: flex; align-items: center; gap: 6px; flex: none;
+  color: var(--gold); font-weight: 900; font-size: 16px;
+}
+
+/* ---- Nearby play ---- */
+.chk {
+  display: flex; align-items: center; gap: 8px; margin: 0 0 14px;
+  color: var(--hint); font-size: 13px; justify-content: center;
+}
+.chk input { accent-color: var(--gold); width: 16px; height: 16px; }
+.ghost.wide { width: 100%; }
+.nearby { margin-top: 12px; text-align: left; }
+.nearby-row {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: 12px; padding: 10px 12px; margin-bottom: 8px;
+}
+.nearby-row .nt-info { flex: 1; min-width: 0; font-size: 14px; }
+.nearby-row .nt-meta { display: block; color: var(--hint); font-size: 12px; margin-top: 2px; }
+.nearby-row .ghost { padding: 9px 16px; font-size: 14px; }
+.nearby-empty { color: var(--hint); font-size: 14px; text-align: center; padding: 8px 0; }
+.nearby-players { color: var(--hint); font-size: 13px; text-align: center; margin-top: 6px; }
+
 /* ====================================================================
    Jetons (chips)
    ==================================================================== */

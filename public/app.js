@@ -15,6 +15,8 @@ let state = {
   pollTimer: null,
   lastJson: "",
   busy: false,
+  profile: null,
+  loc: null,        // {lat, lon} once the user has shared location
 };
 
 /* ---------------- API ---------------- */
@@ -43,17 +45,132 @@ function showLobby(msg, ok) {
   m.className = "msg" + (ok ? " ok" : "");
 }
 
+/* ---------------- Profile (persistent bankroll) ---------------- */
+async function loadProfile() {
+  const r = await api("profile");
+  if (!r.profile) return;
+  renderProfile(r.profile);
+  // Seated at a table on another device / cleared storage? Recover the seat.
+  if (r.profile.active_code && !state.code) {
+    const j = await api("join", { code: r.profile.active_code });
+    if (!j.error) enterTable(j.table);
+  }
+}
+
+function renderProfile(p) {
+  state.profile = p;
+  $("profileCard").classList.remove("hidden");
+  $("profAvatar").textContent = (p.name || "?").trim().charAt(0).toUpperCase();
+  $("profName").textContent = p.name;
+  $("profChips").textContent = fmtChips(p.chips);
+  const winRate = p.hands_played
+    ? Math.round((p.hands_won / p.hands_played) * 100) : 0;
+  $("profStats").textContent = p.hands_played
+    ? `${p.hands_played} hands · ${p.hands_won} won (${winRate}%)`
+    : "No hands played yet";
+}
+
+function setBankroll(chips) {
+  if (chips == null) return;
+  if (state.profile) state.profile.chips = chips;
+  $("profChips").textContent = fmtChips(chips);
+  $("profileCard").classList.remove("hidden");
+}
+
+/* ---------------- Location ---------------- */
+function locate() {
+  if (state.loc) return Promise.resolve(state.loc);
+  return new Promise((resolve, reject) => {
+    const done = (lat, lon) => { state.loc = { lat, lon }; resolve(state.loc); };
+    const fail = () => reject(new Error("Location unavailable. Allow location access and try again."));
+    // Prefer Telegram's LocationManager (no browser prompt inside the app).
+    const lm = tg && tg.LocationManager;
+    if (lm && lm.init) {
+      lm.init(() => {
+        if (!lm.isLocationAvailable) return fallback();
+        lm.getLocation((loc) => loc ? done(loc.latitude, loc.longitude) : fallback());
+      });
+      return;
+    }
+    fallback();
+    function fallback() {
+      if (!navigator.geolocation) return fail();
+      navigator.geolocation.getCurrentPosition(
+        (pos) => done(pos.coords.latitude, pos.coords.longitude),
+        fail, { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 });
+    }
+  });
+}
+
+/* ---------------- Nearby play ---------------- */
+$("btnNearby").onclick = async () => {
+  const btn = $("btnNearby");
+  btn.disabled = true;
+  btn.textContent = "📍 Locating…";
+  try {
+    const loc = await locate();
+    const r = await api("nearby", loc);
+    if (r.error) showLobby(r.error);
+    else renderNearby(r.nearby);
+  } catch (e) {
+    showLobby(e.message);
+  }
+  btn.disabled = false;
+  btn.textContent = "📍 Refresh nearby tables";
+};
+
+function renderNearby(nb) {
+  $("nearbyPanel").classList.remove("hidden");
+  const list = $("nearbyList");
+  if (!nb.tables.length) {
+    list.innerHTML = `<div class="nearby-empty">No open tables within ${nb.radius_km} km.</div>`;
+  } else {
+    list.innerHTML = nb.tables.map((t) => `
+      <div class="nearby-row">
+        <div class="nt-info">
+          <b>${escapeHtml(t.host)}</b>'s table
+          <span class="nt-meta">${t.small_blind}/${t.big_blind} · buy-in ${fmt(t.buy_in)}
+            · ${t.seats}/${t.max_seats} seats · ${t.distance_km} km</span>
+        </div>
+        <button class="ghost" onclick="joinNearby('${t.code}')">Join</button>
+      </div>`).join("");
+  }
+  const n = nb.players.length;
+  $("nearbyPlayers").textContent = n
+    ? `👥 ${n} player${n > 1 ? "s" : ""} nearby looking for a game — create a visible table!`
+    : "No other players nearby right now. Leave this open — you're now visible to them.";
+}
+
+async function joinNearby(code) {
+  const r = await api("join", { code });
+  if (r.error) return showLobby(r.error);
+  setBankroll(r.bankroll);
+  enterTable(r.table);
+}
+
 $("btnCreate").onclick = async () => {
   $("btnCreate").disabled = true;
   const [sb, bb] = $("optBlinds").value.split(",").map(Number);
-  const r = await api("create", {
+  const extra = {
     small_blind: sb,
     big_blind: bb,
     starting_stack: Number($("optStack").value),
     turn_seconds: Number($("optTimer").value),
-  });
+  };
+  if ($("optNearby").checked) {
+    try {
+      const loc = await locate();
+      extra.lat = loc.lat;
+      extra.lon = loc.lon;
+    } catch (e) {
+      $("btnCreate").disabled = false;
+      return showLobby(e.message);
+    }
+  }
+  const r = await api("create", extra);
   $("btnCreate").disabled = false;
   if (r.error) return showLobby(r.error);
+  setBankroll(r.bankroll);
   enterTable(r.table);
 };
 
@@ -62,12 +179,14 @@ $("btnJoin").onclick = async () => {
   if (code.length < 4) return showLobby("Enter a valid table code.");
   const r = await api("join", { code });
   if (r.error) return showLobby(r.error);
+  setBankroll(r.bankroll);
   enterTable(r.table);
 };
 
 $("btnLeave").onclick = async () => {
   if (tg) tg.HapticFeedback && tg.HapticFeedback.impactOccurred("light");
-  await api("leave");
+  const r = await api("leave");
+  if (r && r.bankroll != null) setBankroll(r.bankroll);
   localStorage.removeItem("pokerCode");
   state.code = null;
   showLobby("");
@@ -648,9 +767,11 @@ async function doPreact(mode) {
 async function doRebuy() {
   const r = await api("rebuy");
   if (r.error && !r.table) return flashStage(r.error.slice(0, 40));
+  if (r.bankroll != null) setBankroll(r.bankroll);
   state.lastJson = ""; render(r.table);
 }
 window.invite = invite;
+window.joinNearby = joinNearby;
 window.doAct = doAct;
 window.doRaise = doRaise;
 window.doStart = doStart;
@@ -667,13 +788,14 @@ function escapeHtml(s) {
 
 /* ---------------- Boot ---------------- */
 (async function boot() {
+  loadProfile(); // fire-and-forget: fills the lobby card when it lands
   const url = new URLSearchParams(location.search);
   const startParam =
     (tg && tg.initDataUnsafe ? tg.initDataUnsafe.start_param : null) ||
     url.get("c") || url.get("tgWebAppStartParam");
   if (startParam) {
     const r = await api("join", { code: startParam.toUpperCase() });
-    if (!r.error) return enterTable(r.table);
+    if (!r.error) { setBankroll(r.bankroll); return enterTable(r.table); }
     showLobby(r.error);
     return;
   }
